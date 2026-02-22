@@ -210,21 +210,22 @@ class MultiplayerEngine:
                     continue
             next_heads[sid] = (nr, nc)
 
-        # Build occupation set (body cells that will remain after the tick).
-        # Exclude tails unless the snake is about to grow.
+        # Build occupation set from pre-move bodies for this tick.
+        # For moving snakes, exclude tails unless the snake is about to grow.
+        # Wall-dead snakes do not move this tick, so keep their full bodies.
         occupation: set[tuple[int, int]] = set()
         for sid in alive_ids:
-            if sid in wall_dead:
-                continue
             snake = self.snakes[sid]
+            if sid in wall_dead:
+                occupation.update(snake.body)
+                continue
             head_pos = next_heads.get(sid)
             will_grow = (
                 head_pos is not None
                 and self.grid.in_bounds(head_pos[0], head_pos[1])
                 and self.grid.get(head_pos[0], head_pos[1]) == CellType.APPLE
             )
-            for seg in snake.body:
-                occupation.add(seg)
+            occupation.update(snake.body)
             if not will_grow and len(snake.body) > 0:
                 occupation.discard(snake.body[-1])
 

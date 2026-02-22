@@ -193,6 +193,42 @@ class TestMultiplayerWallCollision:
         # proves it crossed the boundary without instant death.
         assert engine.tick > 7
 
+    @pytest.mark.parametrize(
+        "dead_body_mode",
+        [DeadBodyMode.REMOVE, DeadBodyMode.OBSTACLE],
+    )
+    def test_wall_death_body_still_collides_same_tick(self, dead_body_mode):
+        cfg = MatchConfig(
+            player_count=2,
+            grid_width=10,
+            grid_height=10,
+            dead_body_mode=dead_body_mode,
+            seed=0,
+        )
+        engine = MultiplayerEngine(cfg)
+        s0, s1 = engine.snakes[0], engine.snakes[1]
+
+        engine.grid.clear()
+
+        # Snake 0 dies to wall this tick (moving LEFT from col 0).
+        s0.body.clear()
+        s0.body.extend([(5, 0), (5, 1), (5, 2)])
+        s0.direction = Direction.LEFT
+
+        # Snake 1 moves UP into snake 0's body cell (5, 1) this same tick.
+        s1.body.clear()
+        s1.body.extend([(6, 1), (7, 1), (8, 1)])
+        s1.direction = Direction.UP
+
+        for snake in (s0, s1):
+            for r, c in snake.body:
+                engine.grid.set(r, c, CellType.SNAKE)
+
+        engine.step()
+
+        assert not s0.alive
+        assert not s1.alive
+
 
 # ---------------------------------------------------------------------------
 # Self-collision
