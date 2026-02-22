@@ -210,24 +210,13 @@ class MultiplayerEngine:
                     continue
             next_heads[sid] = (nr, nc)
 
-        # Build occupation set from pre-move bodies for this tick.
-        # For moving snakes, exclude tails unless the snake is about to grow.
-        # Wall-dead snakes do not move this tick, so keep their full bodies.
-        occupation: set[tuple[int, int]] = set()
-        for sid in alive_ids:
-            snake = self.snakes[sid]
-            if sid in wall_dead:
-                occupation.update(snake.body)
-                continue
-            head_pos = next_heads.get(sid)
-            will_grow = (
-                head_pos is not None
-                and self.grid.in_bounds(head_pos[0], head_pos[1])
+        # Determine growth intent from pre-move grid state.
+        will_grow_by_sid: dict[int, bool] = {}
+        for sid, head_pos in next_heads.items():
+            will_grow_by_sid[sid] = (
+                self.grid.in_bounds(head_pos[0], head_pos[1])
                 and self.grid.get(head_pos[0], head_pos[1]) == CellType.APPLE
             )
-            occupation.update(snake.body)
-            if not will_grow and len(snake.body) > 0:
-                occupation.discard(snake.body[-1])
 
         # Detect head-to-head collisions.
         head_counts: Counter[tuple[int, int]] = Counter()
@@ -240,14 +229,40 @@ class MultiplayerEngine:
             if sid not in wall_dead and head_counts[pos] > 1:
                 head_head_dead.add(sid)
 
-        # Detect head-to-body and self-collisions.
-        body_dead: set[int] = set()
+        # Detect head-to-body, self, and obstacle collisions.
+        # Snakes that die this tick do not move, so their tails remain occupied.
+        # Resolve to a fixed point because each newly dead snake can expose
+        # further collisions against a tail that will no longer vacate.
+        obstacle_dead: set[int] = set()
         for sid, pos in next_heads.items():
             if sid in wall_dead or sid in head_head_dead:
                 continue
-            hits_obstacle = self.grid.get(pos[0], pos[1]) == CellType.OBSTACLE
-            if pos in occupation or hits_obstacle:
-                body_dead.add(sid)
+            if self.grid.get(pos[0], pos[1]) == CellType.OBSTACLE:
+                obstacle_dead.add(sid)
+
+        immobile: set[int] = set(wall_dead | head_head_dead | obstacle_dead)
+        while True:
+            occupation: set[tuple[int, int]] = set()
+            for sid in alive_ids:
+                snake = self.snakes[sid]
+                occupation.update(snake.body)
+                if sid in immobile or sid not in next_heads:
+                    continue
+                if not will_grow_by_sid.get(sid, False) and snake.body:
+                    occupation.discard(snake.body[-1])
+
+            new_body_dead: set[int] = set()
+            for sid, pos in next_heads.items():
+                if sid in immobile:
+                    continue
+                if pos in occupation:
+                    new_body_dead.add(sid)
+
+            if not new_body_dead:
+                break
+            immobile.update(new_body_dead)
+
+        body_dead = immobile - wall_dead - head_head_dead
 
         # Combine all deaths for this tick.
         all_dead = wall_dead | head_head_dead | body_dead

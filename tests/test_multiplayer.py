@@ -328,6 +328,50 @@ class TestHeadToBodyCollision:
         assert not s0.alive
         assert s1.alive
 
+    @pytest.mark.parametrize(
+        "dead_body_mode",
+        [DeadBodyMode.REMOVE, DeadBodyMode.OBSTACLE],
+    )
+    def test_tail_of_non_wall_dead_snake_remains_lethal_same_tick(
+        self, dead_body_mode,
+    ):
+        cfg = MatchConfig(
+            player_count=3,
+            grid_width=12,
+            grid_height=12,
+            dead_body_mode=dead_body_mode,
+            seed=0,
+        )
+        engine = MultiplayerEngine(cfg)
+        s0, s1, s2 = engine.snakes
+
+        engine.grid.clear()
+
+        # Snake 0 will die this tick by hitting an obstacle at (5, 6).
+        s0.body.clear()
+        s0.body.extend([(5, 5), (5, 4), (5, 3)])
+        s0.direction = Direction.RIGHT
+        engine.grid.set(5, 6, CellType.OBSTACLE)
+
+        # Snake 1 moves into snake 0's tail at (5, 3) in the same tick.
+        s1.body.clear()
+        s1.body.extend([(6, 3), (7, 3), (8, 3)])
+        s1.direction = Direction.UP
+
+        # Snake 2 moves safely so the match does not end by mutual wipeout.
+        s2.body.clear()
+        s2.body.extend([(11, 11), (11, 10), (11, 9)])
+        s2.direction = Direction.UP
+
+        for snake in (s0, s1, s2):
+            for r, c in snake.body:
+                engine.grid.set(r, c, CellType.SNAKE)
+
+        engine.step()
+        assert not s0.alive
+        assert not s1.alive
+        assert s2.alive
+
 
 # ---------------------------------------------------------------------------
 # Dead body modes
