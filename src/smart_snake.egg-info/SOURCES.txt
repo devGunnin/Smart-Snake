@@ -1,0 +1,16 @@
+README.md
+pyproject.toml
+src/smart_snake/__init__.py
+src/smart_snake/apple.py
+src/smart_snake/engine.py
+src/smart_snake/grid.py
+src/smart_snake/snake.py
+src/smart_snake.egg-info/PKG-INFO
+src/smart_snake.egg-info/SOURCES.txt
+src/smart_snake.egg-info/dependency_links.txt
+src/smart_snake.egg-info/requires.txt
+src/smart_snake.egg-info/top_level.txt
+tests/test_apple.py
+tests/test_engine.py
+tests/test_grid.py
+tests/test_snake.py
