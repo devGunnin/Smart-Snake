@@ -328,6 +328,35 @@ class TestHeadToBodyCollision:
         assert not s0.alive
         assert s1.alive
 
+    def test_tail_handoff_keeps_new_head_cell_occupied(self):
+        cfg = MatchConfig(
+            player_count=2, grid_width=12, grid_height=12, seed=0,
+        )
+        engine = MultiplayerEngine(cfg)
+        s0, s1 = engine.snakes[0], engine.snakes[1]
+
+        engine.grid.clear()
+        s0.body.clear()
+        s0.body.extend([(5, 5), (5, 4), (5, 3)])
+        s0.direction = Direction.RIGHT
+
+        s1.body.clear()
+        s1.body.extend([(4, 7), (5, 7), (5, 6)])
+        s1.direction = Direction.LEFT
+
+        for snake in (s0, s1):
+            for r, c in snake.body:
+                engine.grid.set(r, c, CellType.SNAKE)
+
+        # Snake 0 moves into snake 1's vacating tail while snake 1 moves away.
+        engine.step()
+
+        assert s0.alive
+        assert s1.alive
+        assert s0.head == (5, 6)
+        assert (5, 6) in s0.body
+        assert engine.grid.get(5, 6) == CellType.SNAKE
+
     @pytest.mark.parametrize(
         "dead_body_mode",
         [DeadBodyMode.REMOVE, DeadBodyMode.OBSTACLE],
@@ -584,6 +613,51 @@ class TestMultiplayerApples:
         engine.step()
         assert engine.players[0].score == 1
         assert len(engine.snakes[0].body) == 4
+
+    def test_respawn_after_step_does_not_affect_other_snake_growth(self):
+        cfg = MatchConfig(
+            player_count=2,
+            grid_width=10,
+            grid_height=10,
+            max_apples=1,
+            seed=0,
+        )
+        engine = MultiplayerEngine(cfg)
+        s0, s1 = engine.snakes[0], engine.snakes[1]
+
+        for r in range(engine.grid.height):
+            for c in range(engine.grid.width):
+                engine.grid.set(r, c, CellType.OBSTACLE)
+        engine.apple_spawner.positions.clear()
+
+        # Snake 0 consumes the only pre-move apple.
+        s0.body.clear()
+        s0.body.extend([(3, 2), (3, 1), (3, 0)])
+        s0.direction = Direction.RIGHT
+
+        # Snake 1 moves to an empty cell in the same tick.
+        s1.body.clear()
+        s1.body.extend([(6, 5), (6, 4), (6, 3)])
+        s1.direction = Direction.UP
+
+        for snake in (s0, s1):
+            for r, c in snake.body:
+                engine.grid.set(r, c, CellType.SNAKE)
+
+        apple_cell = s0.next_head()
+        snake1_next = s1.next_head()
+        engine.grid.set(apple_cell[0], apple_cell[1], CellType.APPLE)
+        engine.apple_spawner.positions.append(apple_cell)
+        engine.grid.set(snake1_next[0], snake1_next[1], CellType.EMPTY)
+
+        assert engine.grid.get(snake1_next[0], snake1_next[1]) == CellType.EMPTY
+
+        engine.step()
+
+        assert engine.players[0].score == 1
+        assert len(s0.body) == 4
+        assert engine.players[1].score == 0
+        assert len(s1.body) == 3
 
 
 # ---------------------------------------------------------------------------

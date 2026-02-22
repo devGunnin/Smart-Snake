@@ -276,23 +276,39 @@ class MultiplayerEngine:
             sid for sid in alive_ids
             if sid not in all_dead and sid in next_heads
         ]
+        consumed_apples: list[tuple[int, int]] = []
+        vacated_cells: list[tuple[int, int]] = []
         for sid in survivors:
             snake = self.snakes[sid]
             nr, nc = next_heads[sid]
-            will_grow = self.grid.get(nr, nc) == CellType.APPLE
+            will_grow = will_grow_by_sid.get(sid, False)
 
             snake.body.appendleft((nr, nc))
-            vacated = None if will_grow else snake.body.pop()
-
             if will_grow:
-                self.apple_spawner.remove(nr, nc)
-                self.grid.set(nr, nc, CellType.SNAKE)
+                consumed_apples.append((nr, nc))
                 self.players[sid].score += 1
-                self.apple_spawner.spawn(1)
             else:
-                self.grid.set(nr, nc, CellType.SNAKE)
-                if vacated is not None:
-                    self.grid.set(vacated[0], vacated[1], CellType.EMPTY)
+                vacated_cells.append(snake.body.pop())
+
+        for apple_r, apple_c in consumed_apples:
+            self.apple_spawner.remove(apple_r, apple_c)
+
+        occupied_after_move: set[tuple[int, int]] = set()
+        for sid in survivors:
+            occupied_after_move.update(self.snakes[sid].body)
+
+        for tail_r, tail_c in vacated_cells:
+            if (tail_r, tail_c) in occupied_after_move:
+                continue
+            if self.grid.get(tail_r, tail_c) == CellType.SNAKE:
+                self.grid.set(tail_r, tail_c, CellType.EMPTY)
+
+        for sid in survivors:
+            head_r, head_c = self.snakes[sid].head
+            self.grid.set(head_r, head_c, CellType.SNAKE)
+
+        if consumed_apples:
+            self.apple_spawner.spawn(len(consumed_apples))
 
         # Update survival ticks for living snakes.
         self.tick += 1
