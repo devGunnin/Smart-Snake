@@ -148,14 +148,14 @@ class TestDisconnectHandling:
         slot = game.players[tokens[0]]
 
         ws1_ctx = tc.websocket_connect(f"/games/{game_id}/play?token={tokens[0]}")
-        ws1 = ws1_ctx.__enter__()
+        ws1_ctx.__enter__()
         ws1_closed = False
         ws2_ctx = None
         try:
-            ws1.receive_text()
+            ws1_ctx.receive_text()
             ws2_ctx = tc.websocket_connect(f"/games/{game_id}/play?token={tokens[0]}")
-            ws2 = ws2_ctx.__enter__()
-            ws2.receive_text()
+            ws2_ctx.__enter__()
+            ws2_ctx.receive_text()
 
             # Old connection drops after a newer one is established.
             ws1_ctx.__exit__(None, None, None)
