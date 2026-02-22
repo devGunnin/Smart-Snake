@@ -212,7 +212,9 @@ class GameManager:
                 slot.websocket = None
                 slot.connected = False
 
-        for ws in game.spectators:
+        # Iterate over a snapshot so concurrent disconnect handlers can mutate
+        # the live spectator list without affecting this send loop.
+        for ws in list(game.spectators):
             try:
                 if ws.client_state == WebSocketState.CONNECTED:
                     await ws.send_text(payload)
@@ -220,7 +222,8 @@ class GameManager:
                 dead_spectators.append(ws)
 
         for ws in dead_spectators:
-            game.spectators.remove(ws)
+            if ws in game.spectators:
+                game.spectators.remove(ws)
 
     async def cleanup(self) -> None:
         """Cancel all running tick loops."""

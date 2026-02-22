@@ -6,7 +6,7 @@ import json
 
 import pytest
 from starlette.testclient import TestClient
-from starlette.websockets import WebSocketDisconnect
+from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from smart_snake.server.app import create_app
 from smart_snake.server.game_manager import GameManager
@@ -167,3 +167,27 @@ class TestDisconnectHandling:
                 ws2_ctx.__exit__(None, None, None)
             if not ws1_closed:
                 ws1_ctx.__exit__(None, None, None)
+
+    @pytest.mark.asyncio
+    async def test_spectator_disconnect_during_broadcast_is_idempotent(self):
+        manager = GameManager()
+        game = manager.create_game(player_count=2)
+
+        class DisconnectingSpectator:
+            client_state = WebSocketState.CONNECTED
+
+            def __init__(self, spectators):
+                self._spectators = spectators
+
+            async def send_text(self, _payload):
+                # Simulate a concurrent disconnect handler clearing this socket
+                # before broadcast cleanup runs.
+                if self in self._spectators:
+                    self._spectators.remove(self)
+                raise RuntimeError("socket disconnected")
+
+        spectator = DisconnectingSpectator(game.spectators)
+        game.spectators.append(spectator)
+
+        await manager._broadcast(game, {"tick": 1})
+        assert game.spectators == []
