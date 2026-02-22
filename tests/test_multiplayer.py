@@ -56,6 +56,18 @@ class TestMatchConfig:
         with pytest.raises(ValueError, match="initial_snake_length"):
             MatchConfig(initial_snake_length=0)
 
+    def test_initial_length_must_fit_spawn_layout(self):
+        with pytest.raises(ValueError, match="initial_snake_length"):
+            MatchConfig(
+                player_count=2, grid_width=20, grid_height=20, initial_snake_length=6,
+            )
+
+    def test_small_grid_rejected_when_spawn_does_not_fit(self):
+        with pytest.raises(ValueError, match="initial_snake_length"):
+            MatchConfig(
+                player_count=2, grid_width=5, grid_height=5, initial_snake_length=3,
+            )
+
 
 # ---------------------------------------------------------------------------
 # Engine initialization
@@ -318,6 +330,33 @@ class TestDeadBodyMode:
         engine._kill_snake(0)
         for r, c in body_cells:
             assert engine.grid.get(r, c) == CellType.OBSTACLE
+
+    def test_obstacle_mode_blocks_movement(self):
+        cfg = MatchConfig(
+            player_count=2,
+            grid_width=20,
+            grid_height=20,
+            dead_body_mode=DeadBodyMode.OBSTACLE,
+            seed=0,
+        )
+        engine = MultiplayerEngine(cfg)
+        s0, s1 = engine.snakes[0], engine.snakes[1]
+
+        engine.grid.clear()
+        s0.body.clear()
+        s0.body.extend([(5, 5), (5, 6), (5, 7)])
+        for r, c in s0.body:
+            engine.grid.set(r, c, CellType.SNAKE)
+        engine._kill_snake(0)
+
+        s1.body.clear()
+        s1.body.extend([(5, 4), (5, 3), (5, 2)])
+        s1.direction = Direction.RIGHT
+        for r, c in s1.body:
+            engine.grid.set(r, c, CellType.SNAKE)
+
+        engine.step()
+        assert not s1.alive
 
 
 # ---------------------------------------------------------------------------

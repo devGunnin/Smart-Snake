@@ -59,6 +59,33 @@ class MatchConfig:
         if self.initial_snake_length < 1:
             raise ValueError("initial_snake_length must be at least 1.")
 
+        width = self.effective_width
+        height = self.effective_height
+        if width < 4 or height < 4:
+            raise ValueError("grid_width and grid_height must each be at least 4.")
+
+        occupied: set[tuple[int, int]] = set()
+        for i in range(self.player_count):
+            row_frac, col_frac, direction = _SPAWN_LAYOUT[i]
+            row = int(height * row_frac)
+            col = int(width * col_frac)
+            dr, dc = direction.value
+
+            for seg in range(self.initial_snake_length):
+                r = row - dr * seg
+                c = col - dc * seg
+                if not (0 <= r < height and 0 <= c < width):
+                    raise ValueError(
+                        "initial_snake_length does not fit the configured grid "
+                        f"for snake {i}; increase grid size or reduce length."
+                    )
+                if (r, c) in occupied:
+                    raise ValueError(
+                        "spawn layout overlaps for this configuration; increase "
+                        "grid size or reduce initial_snake_length."
+                    )
+                occupied.add((r, c))
+
     @property
     def effective_width(self) -> int:
         if self.grid_width is not None:
@@ -217,7 +244,8 @@ class MultiplayerEngine:
         for sid, pos in next_heads.items():
             if sid in wall_dead or sid in head_head_dead:
                 continue
-            if pos in occupation:
+            hits_obstacle = self.grid.get(pos[0], pos[1]) == CellType.OBSTACLE
+            if pos in occupation or hits_obstacle:
                 body_dead.add(sid)
 
         # Combine all deaths for this tick.
