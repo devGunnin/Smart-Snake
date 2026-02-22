@@ -20,6 +20,7 @@ class CellType(enum.IntEnum):
     EMPTY = 0
     SNAKE = 1
     APPLE = 2
+    OBSTACLE = 3
 
 
 class Grid:
