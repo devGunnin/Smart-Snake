@@ -100,3 +100,31 @@ class TestConcurrentGames:
 
         # Different IP should still work.
         manager.create_game(client_ip="other-ip")
+
+    @pytest.mark.asyncio
+    async def test_finished_games_pruned_from_registry(self):
+        """Keep only a bounded number of finished games in memory."""
+        manager = GameManager(max_finished_games=3)
+        game_ids: list[str] = []
+
+        for i in range(6):
+            game = manager.create_game(
+                player_count=2,
+                tick_rate_ms=10,
+                client_ip=f"prune-{i}",
+            )
+            game_ids.append(game.game_id)
+            host = manager.join_game(game.game_id, f"host-{i}")
+            manager.join_game(game.game_id, f"guest-{i}")
+            manager.start_game(game.game_id, host.token)
+
+        for _ in range(200):
+            await asyncio.sleep(0.05)
+            retained = [gid for gid in game_ids if manager.get_game(gid) is not None]
+            if len(retained) <= 3:
+                break
+
+        retained = [gid for gid in game_ids if manager.get_game(gid) is not None]
+        assert len(retained) <= 3
+        assert len(retained) < len(game_ids)
+        await manager.cleanup()

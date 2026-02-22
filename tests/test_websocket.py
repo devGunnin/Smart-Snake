@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 import pytest
 from starlette.testclient import TestClient
@@ -10,6 +11,7 @@ from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from smart_snake.server.app import create_app
 from smart_snake.server.game_manager import GameManager
+from smart_snake.server.models import GameStatus
 
 
 @pytest.fixture()
@@ -191,3 +193,31 @@ class TestDisconnectHandling:
 
         await manager._broadcast(game, {"tick": 1})
         assert game.spectators == []
+
+    def test_game_finish_closes_player_and_spectator_connections(self, tc):
+        game_id, tokens = _create_start_game(tc)
+        game = tc.app.state.game_manager.get_game(game_id)
+        player_slot = game.players[tokens[0]]
+
+        with tc.websocket_connect(
+            f"/games/{game_id}/play?token={tokens[0]}",
+        ) as player_ws, tc.websocket_connect(
+            f"/games/{game_id}/spectate",
+        ) as spectator_ws:
+            player_ws.receive_text()
+            spectator_ws.receive_text()
+
+            game.status = GameStatus.FINISHED
+
+            for _ in range(40):
+                if (
+                    player_slot.websocket is None
+                    and player_slot.connected is False
+                    and game.spectators == []
+                ):
+                    break
+                time.sleep(0.05)
+
+            assert player_slot.websocket is None
+            assert player_slot.connected is False
+            assert game.spectators == []

@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 # Simple rate limit: max games created per IP within the window.
 _RATE_LIMIT_WINDOW = 60.0  # seconds
 _RATE_LIMIT_MAX = 10
+_MAX_FINISHED_GAMES = 100
 
 
 @dataclass
@@ -46,6 +47,7 @@ class GameInstance:
     spectators: list[WebSocket] = field(default_factory=list)
     host_token: str | None = None
     created_at: float = field(default_factory=time.monotonic)
+    finished_at: float | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     _task: asyncio.Task | None = field(default=None, repr=False)
 
@@ -61,9 +63,12 @@ class GameInstance:
 class GameManager:
     """Central registry managing all game instances."""
 
-    def __init__(self) -> None:
+    def __init__(self, max_finished_games: int = _MAX_FINISHED_GAMES) -> None:
+        if max_finished_games < 0:
+            raise ValueError("max_finished_games must be >= 0.")
         self._games: dict[str, GameInstance] = {}
         self._rate_limits: dict[str, list[float]] = {}
+        self._max_finished_games = max_finished_games
 
     def _check_rate_limit(self, client_ip: str) -> bool:
         """Return True if the client is within rate limits."""
@@ -188,13 +193,69 @@ class GameManager:
                     assert game.engine is not None  # noqa: S101
                     state = game.engine.step()
                     if game.engine.game_over:
-                        game.status = GameStatus.FINISHED
+                        self._mark_game_finished(game)
                 await self._broadcast(game, state)
         except asyncio.CancelledError:
             logger.info("Tick loop cancelled for game %s.", game.game_id)
         except Exception:
             logger.exception("Tick loop error in game %s.", game.game_id)
+            self._mark_game_finished(game)
+        finally:
+            if game.status == GameStatus.FINISHED:
+                await self._close_connections(game)
+                self._prune_finished_games()
+
+    def _mark_game_finished(self, game: GameInstance) -> None:
+        """Transition a game to finished exactly once."""
+        if game.status != GameStatus.FINISHED:
             game.status = GameStatus.FINISHED
+            game.finished_at = time.monotonic()
+
+    async def _close_connections(self, game: GameInstance) -> None:
+        """Close any live player and spectator sockets for a finished game."""
+        for slot in game.players.values():
+            ws = slot.websocket
+            slot.websocket = None
+            slot.connected = False
+            if ws is None:
+                continue
+            try:
+                if ws.client_state == WebSocketState.CONNECTED:
+                    await ws.close(code=1000, reason="Game finished.")
+            except Exception:
+                logger.warning(
+                    "Failed closing player socket for '%s' in game %s.",
+                    slot.nickname,
+                    game.game_id,
+                )
+
+        for ws in list(game.spectators):
+            try:
+                if ws.client_state == WebSocketState.CONNECTED:
+                    await ws.close(code=1000, reason="Game finished.")
+            except Exception:
+                logger.warning("Failed closing spectator socket in game %s.", game.game_id)
+        game.spectators.clear()
+
+    def _prune_finished_games(self) -> None:
+        """Bound retained finished games to avoid unbounded registry growth."""
+        finished_games = [
+            g for g in self._games.values() if g.status == GameStatus.FINISHED
+        ]
+        overflow = len(finished_games) - self._max_finished_games
+        if overflow <= 0:
+            return
+
+        finished_games.sort(
+            key=lambda g: g.finished_at if g.finished_at is not None else g.created_at,
+        )
+        for stale in finished_games[:overflow]:
+            self._games.pop(stale.game_id, None)
+        logger.info(
+            "Pruned %d finished games (retaining up to %d).",
+            overflow,
+            self._max_finished_games,
+        )
 
     async def _broadcast(self, game: GameInstance, state: dict) -> None:
         """Send game state to all connected players and spectators."""

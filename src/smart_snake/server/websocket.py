@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 
 from smart_snake.server.game_manager import GameManager
 from smart_snake.server.models import GameStatus
@@ -21,6 +23,7 @@ _DIRECTION_MAP: dict[str, Direction] = {
     "left": Direction.LEFT,
     "right": Direction.RIGHT,
 }
+_RECEIVE_TIMEOUT_SECONDS = 0.25
 
 
 def _get_manager(ws: WebSocket) -> GameManager:
@@ -71,7 +74,19 @@ async def play(websocket: WebSocket, game_id: str, token: str = "") -> None:
 
     try:
         while True:
-            raw = await websocket.receive_text()
+            if game.status == GameStatus.FINISHED:
+                if websocket.client_state == WebSocketState.CONNECTED:
+                    await websocket.close(code=1000, reason="Game finished.")
+                break
+
+            try:
+                raw = await asyncio.wait_for(
+                    websocket.receive_text(),
+                    timeout=_RECEIVE_TIMEOUT_SECONDS,
+                )
+            except TimeoutError:
+                continue
+
             try:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
@@ -127,7 +142,17 @@ async def spectate(websocket: WebSocket, game_id: str) -> None:
 
     try:
         while True:
-            await websocket.receive_text()
+            if game.status == GameStatus.FINISHED:
+                if websocket.client_state == WebSocketState.CONNECTED:
+                    await websocket.close(code=1000, reason="Game finished.")
+                break
+            try:
+                await asyncio.wait_for(
+                    websocket.receive_text(),
+                    timeout=_RECEIVE_TIMEOUT_SECONDS,
+                )
+            except TimeoutError:
+                continue
     except WebSocketDisconnect:
         logger.info("Spectator disconnected from game %s.", game_id)
     finally:
