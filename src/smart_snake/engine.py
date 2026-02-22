@@ -48,10 +48,20 @@ class GameEngine:
         self.score = 0
         self.tick = 0
         self.game_over = False
+        self._pending_direction: Direction | None = None
 
     def set_direction(self, direction: Direction) -> None:
-        """Buffer a direction change for the next step."""
-        self.snake.set_direction(direction)
+        """Buffer at most one valid direction change for the next step."""
+        if self._pending_direction is not None:
+            return
+
+        current_dr, current_dc = self.snake.direction.value
+        next_dr, next_dc = direction.value
+        is_reverse = (current_dr + next_dr == 0) and (current_dc + next_dc == 0)
+        if is_reverse:
+            return
+
+        self._pending_direction = direction
 
     def step(self) -> dict:
         """Advance the game by one tick.
@@ -60,6 +70,10 @@ class GameEngine:
         """
         if self.game_over:
             return self.get_state()
+
+        if self._pending_direction is not None:
+            self.snake.direction = self._pending_direction
+            self._pending_direction = None
 
         next_r, next_c = self.snake.next_head()
 

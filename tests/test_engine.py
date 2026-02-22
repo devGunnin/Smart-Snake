@@ -45,6 +45,24 @@ class TestEngineMovement:
         state = engine.step()
         assert state["tick"] == 0  # tick did not advance
 
+    def test_immediate_reverse_input_is_ignored(self):
+        engine = GameEngine(width=20, height=20, seed=0)
+        engine.set_direction(Direction.LEFT)
+        engine.step()
+        assert engine.snake.direction == Direction.RIGHT
+        assert engine.snake.head == (10, 11)
+
+    def test_multiple_direction_updates_cannot_reverse_in_one_tick(self):
+        engine = GameEngine(width=20, height=20, seed=0)
+        engine.set_direction(Direction.UP)
+        engine.set_direction(Direction.LEFT)
+        engine.step()
+
+        assert engine.snake.alive
+        assert not engine.game_over
+        assert engine.snake.direction == Direction.UP
+        assert engine.snake.head == (9, 10)
+
 
 class TestEngineWallCollision:
     def test_death_on_wall_hit(self):
