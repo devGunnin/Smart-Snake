@@ -42,6 +42,19 @@ async def play(websocket: WebSocket, game_id: str, token: str = "") -> None:
         return
 
     await websocket.accept()
+
+    # Enforce a single active socket per player token.
+    previous_ws = slot.websocket
+    if previous_ws is not None and previous_ws is not websocket:
+        try:
+            await previous_ws.close(code=4008, reason="Replaced by new connection.")
+        except Exception:
+            logger.warning(
+                "Failed closing previous socket for player '%s' in game %s.",
+                slot.nickname,
+                game_id,
+            )
+
     slot.websocket = websocket
     slot.connected = True
     logger.info(
@@ -63,9 +76,11 @@ async def play(websocket: WebSocket, game_id: str, token: str = "") -> None:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
                 continue
+            if not isinstance(msg, dict):
+                continue
 
             direction_str = msg.get("direction")
-            if direction_str is None:
+            if not isinstance(direction_str, str):
                 continue
 
             direction = _DIRECTION_MAP.get(direction_str.lower())
@@ -84,8 +99,11 @@ async def play(websocket: WebSocket, game_id: str, token: str = "") -> None:
             slot.nickname, game_id,
         )
     finally:
-        slot.websocket = None
-        slot.connected = False
+        # A newer connection may have replaced this socket while this handler
+        # was still shutting down.
+        if slot.websocket is websocket:
+            slot.websocket = None
+            slot.connected = False
 
 
 @ws_router.websocket("/games/{game_id}/spectate")

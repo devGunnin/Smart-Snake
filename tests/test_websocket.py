@@ -137,5 +137,33 @@ class TestDisconnectHandling:
             ws.receive_text()
             # Send garbage — should be silently ignored.
             ws.send_text("not-json")
+            ws.send_text("[]")
+            ws.send_text("123")
             ws.send_text(json.dumps({"direction": "invalid_dir"}))
             ws.send_text(json.dumps({"no_direction_key": True}))
+
+    def test_reconnect_does_not_drop_active_replacement_socket(self, tc):
+        game_id, tokens = _create_start_game(tc)
+        game = tc.app.state.game_manager.get_game(game_id)
+        slot = game.players[tokens[0]]
+
+        ws1_ctx = tc.websocket_connect(f"/games/{game_id}/play?token={tokens[0]}")
+        ws1 = ws1_ctx.__enter__()
+        ws1_closed = False
+        ws2_ctx = None
+        try:
+            ws1.receive_text()
+            ws2_ctx = tc.websocket_connect(f"/games/{game_id}/play?token={tokens[0]}")
+            ws2 = ws2_ctx.__enter__()
+            ws2.receive_text()
+
+            # Old connection drops after a newer one is established.
+            ws1_ctx.__exit__(None, None, None)
+            ws1_closed = True
+            assert slot.websocket is not None
+            assert slot.connected is True
+        finally:
+            if ws2_ctx is not None:
+                ws2_ctx.__exit__(None, None, None)
+            if not ws1_closed:
+                ws1_ctx.__exit__(None, None, None)
