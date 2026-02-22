@@ -116,6 +116,18 @@ class TestEngineAppleConsumption:
         engine.step()
         assert len(engine.apple_spawner.positions) == 1
 
+    def test_grid_head_remains_snake_after_eating(self):
+        engine = GameEngine(width=10, height=10, max_apples=1, seed=0)
+        from smart_snake.grid import CellType
+
+        nr, nc = engine.snake.next_head()
+        engine.grid.set(nr, nc, CellType.APPLE)
+        engine.apple_spawner.positions.append((nr, nc))
+        engine.step()
+
+        head_r, head_c = engine.snake.head
+        assert engine.grid.get(head_r, head_c) == CellType.SNAKE
+
 
 class TestEngineSerialization:
     def test_state_is_json_serializable(self):

@@ -90,16 +90,18 @@ class GameEngine:
         self.snake.body.appendleft((next_r, next_c))
         vacated = None if will_grow else self.snake.body.pop()
 
-        # Update grid cells.
-        self.grid.set(next_r, next_c, CellType.SNAKE)
-        if vacated is not None:
-            self.grid.set(vacated[0], vacated[1], CellType.EMPTY)
-
-        # --- apple consumption ---
+        # Update grid cells and handle apple consumption.
         if will_grow:
+            # Remove the consumed apple first; this sets the cell to EMPTY.
+            # Repaint the head immediately after so the grid stays consistent
+            # with the snake body before spawning any replacement apples.
             self.apple_spawner.remove(next_r, next_c)
+            self.grid.set(next_r, next_c, CellType.SNAKE)
             self.score += 1
             self.apple_spawner.spawn(1)
+        else:
+            self.grid.set(next_r, next_c, CellType.SNAKE)
+            self.grid.set(vacated[0], vacated[1], CellType.EMPTY)
 
         self.tick += 1
         return self.get_state()
