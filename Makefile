@@ -1,7 +1,7 @@
 .PHONY: install test lint fmt check
 
 install:
-	pip install -e ".[dev,server]"
+	pip install -e ".[dev,server,ai]"
 
 test:
 	pytest --cov=smart_snake --cov-report=term-missing

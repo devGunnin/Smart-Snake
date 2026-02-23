@@ -16,6 +16,10 @@ server = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
 ]
+ai = [
+    "torch>=2.0",
+    "tensorboard>=2.14",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
