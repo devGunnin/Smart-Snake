@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from numbers import Integral
 
 import numpy as np
 
@@ -28,6 +29,21 @@ ACTION_TO_DIRECTION: list[Direction] = [
     Direction.RIGHT,
 ]
 NUM_ACTIONS = len(ACTION_TO_DIRECTION)
+
+
+def _validate_action(action: int, *, agent_id: int | None = None) -> int:
+    """Validate and normalize an action index."""
+    if not isinstance(action, Integral):
+        who = f" for agent {agent_id}" if agent_id is not None else ""
+        raise TypeError(f"Action{who} must be an integer, got {type(action).__name__}.")
+
+    action_idx = int(action)
+    if not 0 <= action_idx < NUM_ACTIONS:
+        who = f" for agent {agent_id}" if agent_id is not None else ""
+        raise ValueError(
+            f"Action{who} must be in [0, {NUM_ACTIONS - 1}], got {action_idx}."
+        )
+    return action_idx
 
 
 @dataclass
@@ -95,9 +111,10 @@ class SnakeEnv:
         """Execute *action* and return ``(obs, reward, terminated, truncated, info)``."""
         if self._engine is None:
             raise RuntimeError("Call reset() before step().")
+        action_idx = _validate_action(action)
 
         prev_score = self._engine.score
-        self._engine.set_direction(ACTION_TO_DIRECTION[action])
+        self._engine.set_direction(ACTION_TO_DIRECTION[action_idx])
         self._engine.step()
         self._steps += 1
 
@@ -219,12 +236,23 @@ class MultiSnakeEnv:
         """
         if self._engine is None:
             raise RuntimeError("Call reset() before step().")
+        if len(actions) != self._player_count:
+            raise ValueError(
+                "actions length must match player_count: "
+                f"expected {self._player_count}, got {len(actions)}."
+            )
+        action_indices = [
+            _validate_action(action, agent_id=sid)
+            for sid, action in enumerate(actions)
+        ]
 
         prev_scores = [p.score for p in self._engine.players]
 
         for sid in range(self._player_count):
             if self._engine.snakes[sid].alive:
-                self._engine.set_direction(sid, ACTION_TO_DIRECTION[actions[sid]])
+                self._engine.set_direction(
+                    sid, ACTION_TO_DIRECTION[action_indices[sid]],
+                )
         self._engine.step()
         self._steps += 1
 

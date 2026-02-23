@@ -85,6 +85,14 @@ class TestSnakeEnvStep:
         # Should either terminate from death or truncate at step 5.
         assert terminated or truncated
 
+    def test_invalid_action_raises(self):
+        env = SnakeEnv(width=10, height=10, seed=0)
+        env.reset()
+        with pytest.raises(ValueError, match="must be in"):
+            env.step(-1)
+        with pytest.raises(ValueError, match="must be in"):
+            env.step(4)
+
 
 class TestSnakeEnvRender:
     def test_render_before_reset(self):
@@ -163,3 +171,19 @@ class TestMultiSnakeEnvStep:
         obs2, rewards, terminated, truncated, info = env.step([0, 1, 2])
         assert len(obs2) == 3
         assert len(rewards) == 3
+
+    def test_invalid_actions_length_raises(self):
+        env = MultiSnakeEnv(player_count=2, seed=0)
+        env.reset()
+        with pytest.raises(ValueError, match="length must match player_count"):
+            env.step([0])
+        with pytest.raises(ValueError, match="length must match player_count"):
+            env.step([0, 1, 2])
+
+    def test_invalid_per_agent_action_raises(self):
+        env = MultiSnakeEnv(player_count=2, seed=0)
+        env.reset()
+        with pytest.raises(ValueError, match="agent 0"):
+            env.step([-1, 0])
+        with pytest.raises(ValueError, match="agent 1"):
+            env.step([0, 4])
