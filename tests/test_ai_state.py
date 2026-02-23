@@ -185,6 +185,17 @@ class TestEncodeMulti:
         assert 0.0 <= obs[CH_NEAREST_APPLE_DISTANCE, 0, 0] <= 1.0
         assert 0.0 <= obs[CH_NEAREST_DANGER_DISTANCE, 0, 0] <= 1.0
 
+    def test_nearest_danger_ignores_dead_removed_body_segments(self):
+        grid = Grid(width=10, height=10, wall_mode=WallMode.WRAP)
+        own = Snake(5, 5, Direction.RIGHT, length=2)
+        dead = Snake(5, 7, Direction.LEFT, length=1)
+        dead.alive = False
+
+        obs = encode_multi(grid, [own, dead], perspective_id=0)
+
+        # In wrap mode with no obstacles, only stale dead-body cells could be danger.
+        assert obs[CH_NEAREST_DANGER_DISTANCE, 0, 0] == 1.0
+
     def test_relative_mode_shifts_to_perspective_head(self):
         engine = MultiplayerEngine(MatchConfig(player_count=2, seed=0))
         abs_obs = encode_multi(engine.grid, engine.snakes, 0, mode="absolute")

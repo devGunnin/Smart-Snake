@@ -140,7 +140,7 @@ def _danger_cells(
     danger.update(zip(rows.tolist(), cols.tolist(), strict=True))
 
     for sid, snake in enumerate(snakes):
-        if not snake.body:
+        if not snake.alive or not snake.body:
             continue
         for idx, seg in enumerate(snake.body):
             if sid == perspective_id and idx == 0:
