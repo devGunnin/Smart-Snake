@@ -12,7 +12,7 @@ from numbers import Integral
 
 import numpy as np
 
-from smart_snake.ai.config import RewardConfig
+from smart_snake.ai.config import RewardConfig, StateEncodingMode
 from smart_snake.ai.state import NUM_CHANNELS, encode_multi, encode_single
 from smart_snake.engine import GameEngine
 from smart_snake.grid import WallMode
@@ -58,7 +58,7 @@ class SpaceInfo:
 class SnakeEnv:
     """Single-player snake environment with Gymnasium-style API.
 
-    Observations are ``(6, height, width)`` float32 arrays.
+    Observations are ``(C, height, width)`` float32 arrays.
     Actions are integers in ``[0, 3]`` mapping to UP/DOWN/LEFT/RIGHT.
     """
 
@@ -71,6 +71,7 @@ class SnakeEnv:
         seed: int | None = None,
         reward_config: RewardConfig | None = None,
         max_steps: int = 1000,
+        state_encoding: StateEncodingMode = "absolute",
     ) -> None:
         self._width = width
         self._height = height
@@ -80,6 +81,7 @@ class SnakeEnv:
         self._seed = seed
         self._reward_cfg = reward_config or RewardConfig()
         self._max_steps = max_steps
+        self._state_encoding = state_encoding
 
         self.observation_space = SpaceInfo(
             shape=(NUM_CHANNELS, height, width), dtype="float32",
@@ -102,7 +104,9 @@ class SnakeEnv:
             seed=s,
         )
         self._steps = 0
-        obs = encode_single(self._engine.grid, self._engine.snake)
+        obs = encode_single(
+            self._engine.grid, self._engine.snake, mode=self._state_encoding,
+        )
         return obs, {"score": 0, "tick": 0}
 
     def step(
@@ -118,7 +122,9 @@ class SnakeEnv:
         self._engine.step()
         self._steps += 1
 
-        obs = encode_single(self._engine.grid, self._engine.snake)
+        obs = encode_single(
+            self._engine.grid, self._engine.snake, mode=self._state_encoding,
+        )
 
         reward = self._reward_cfg.step_penalty
         if self._engine.score > prev_score:
@@ -168,6 +174,7 @@ class MultiSnakeEnv:
         seed: int | None = None,
         reward_config: RewardConfig | None = None,
         max_steps: int = 1000,
+        state_encoding: StateEncodingMode = "absolute",
     ) -> None:
         self._player_count = player_count
         self._grid_width = grid_width
@@ -178,6 +185,7 @@ class MultiSnakeEnv:
         self._seed = seed
         self._reward_cfg = reward_config or RewardConfig()
         self._max_steps = max_steps
+        self._state_encoding = state_encoding
 
         cfg = MatchConfig(
             player_count=player_count,
@@ -220,7 +228,12 @@ class MultiSnakeEnv:
         self._prev_alive = [True] * self._player_count
 
         obs = [
-            encode_multi(self._engine.grid, self._engine.snakes, i)
+            encode_multi(
+                self._engine.grid,
+                self._engine.snakes,
+                i,
+                mode=self._state_encoding,
+            )
             for i in range(self._player_count)
         ]
         info = {"tick": 0, "scores": [0] * self._player_count}
@@ -263,7 +276,12 @@ class MultiSnakeEnv:
 
         for sid in range(self._player_count):
             obs.append(
-                encode_multi(self._engine.grid, self._engine.snakes, sid),
+                encode_multi(
+                    self._engine.grid,
+                    self._engine.snakes,
+                    sid,
+                    mode=self._state_encoding,
+                ),
             )
 
             r = self._reward_cfg.step_penalty

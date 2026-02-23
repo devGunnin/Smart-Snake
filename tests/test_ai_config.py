@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from smart_snake.ai.config import RewardConfig, TrainingConfig
 
 
@@ -26,6 +28,7 @@ class TestTrainingConfig:
         assert cfg.player_count == 2
         assert cfg.dueling is True
         assert cfg.double_dqn is True
+        assert cfg.state_encoding == "absolute"
 
     def test_to_dict(self):
         cfg = TrainingConfig()
@@ -47,6 +50,7 @@ class TestTrainingConfig:
         assert loaded.grid_width == 15
         assert loaded.epsilon_start == 0.5
         assert loaded.reward.apple == 3.0
+        assert loaded.state_encoding == "absolute"
 
     def test_json_roundtrip(self, tmp_path):
         cfg = TrainingConfig(conv_channels=(16, 32, 64))
@@ -59,3 +63,14 @@ class TestTrainingConfig:
         cfg = TrainingConfig()
         serialized = json.dumps(cfg.to_dict())
         assert isinstance(serialized, str)
+
+    def test_state_encoding_roundtrip(self, tmp_path):
+        cfg = TrainingConfig(state_encoding="relative")
+        path = tmp_path / "config_relative.json"
+        cfg.save(path)
+        loaded = TrainingConfig.load(path)
+        assert loaded.state_encoding == "relative"
+
+    def test_invalid_state_encoding_rejected(self):
+        with pytest.raises(ValueError, match="state_encoding must be either"):
+            TrainingConfig(state_encoding="diagonal")  # type: ignore[arg-type]

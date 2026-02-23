@@ -6,8 +6,11 @@ import json
 import logging
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Literal
 
 logger = logging.getLogger(__name__)
+
+StateEncodingMode = Literal["absolute", "relative"]
 
 
 @dataclass(frozen=True)
@@ -35,6 +38,7 @@ class TrainingConfig:
     wall_mode: str = "death"
     max_apples: int = 3
     initial_snake_length: int = 3
+    state_encoding: StateEncodingMode = "absolute"
 
     # Network
     dueling: bool = True
@@ -78,6 +82,13 @@ class TrainingConfig:
     checkpoint_dir: str = "checkpoints"
     log_dir: str = "runs"
 
+    def __post_init__(self) -> None:
+        if self.state_encoding not in {"absolute", "relative"}:
+            raise ValueError(
+                "state_encoding must be either 'absolute' or 'relative', "
+                f"got {self.state_encoding!r}.",
+            )
+
     def to_dict(self) -> dict:
         """Serialize to a plain dict (tuples become lists)."""
         return asdict(self)
@@ -97,4 +108,12 @@ class TrainingConfig:
         raw["reward"] = RewardConfig(**reward_data)
         if "conv_channels" in raw:
             raw["conv_channels"] = tuple(raw["conv_channels"])
+        if "state_encoding" in raw and raw["state_encoding"] not in {
+            "absolute",
+            "relative",
+        }:
+            raise ValueError(
+                "state_encoding must be either 'absolute' or 'relative', "
+                f"got {raw['state_encoding']!r}.",
+            )
         return cls(**raw)

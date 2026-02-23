@@ -1,13 +1,22 @@
 """Tests for state encoding."""
 
 import numpy as np
+import pytest
 
 from smart_snake.ai.state import (
     CH_APPLES,
+    CH_DIR_DOWN,
+    CH_DIR_LEFT,
+    CH_DIR_RIGHT,
+    CH_DIR_UP,
+    CH_NEAREST_APPLE_DISTANCE,
+    CH_NEAREST_DANGER_DISTANCE,
     CH_OPPONENT_BODIES,
     CH_OPPONENT_HEADS,
+    CH_OPPONENT_MEAN_LENGTH,
     CH_OWN_BODY,
     CH_OWN_HEAD,
+    CH_OWN_LENGTH,
     CH_WALLS,
     NUM_CHANNELS,
     encode_multi,
@@ -68,6 +77,36 @@ class TestEncodeSingle:
         assert obs[CH_OWN_HEAD].sum() == 0.0
         assert obs[CH_OWN_BODY].sum() == 0.0
 
+    def test_auxiliary_channels(self):
+        engine = GameEngine(width=10, height=10, max_apples=3, seed=0)
+        obs = encode_single(engine.grid, engine.snake)
+
+        assert 0.0 < obs[CH_OWN_LENGTH, 0, 0] < 1.0
+        assert obs[CH_OPPONENT_MEAN_LENGTH, 0, 0] == 0.0
+
+        assert obs[CH_DIR_RIGHT].sum() == 100.0
+        assert obs[CH_DIR_UP].sum() == 0.0
+        assert obs[CH_DIR_DOWN].sum() == 0.0
+        assert obs[CH_DIR_LEFT].sum() == 0.0
+
+        assert 0.0 <= obs[CH_NEAREST_APPLE_DISTANCE, 0, 0] <= 1.0
+        assert 0.0 <= obs[CH_NEAREST_DANGER_DISTANCE, 0, 0] <= 1.0
+
+    def test_relative_mode_centers_head(self):
+        grid = Grid(width=10, height=10)
+        snake = Snake(2, 7, Direction.RIGHT, length=3)
+
+        abs_obs = encode_single(grid, snake, mode="absolute")
+        rel_obs = encode_single(grid, snake, mode="relative")
+
+        assert abs_obs[CH_OWN_HEAD, 2, 7] == 1.0
+        assert rel_obs[CH_OWN_HEAD, 5, 5] == 1.0
+
+    def test_invalid_mode_raises(self):
+        engine = GameEngine(width=10, height=10, seed=0)
+        with pytest.raises(ValueError, match="Unsupported state encoding mode"):
+            encode_single(engine.grid, engine.snake, mode="bad-mode")
+
 
 class TestEncodeMulti:
     def test_shape(self):
@@ -101,3 +140,29 @@ class TestEncodeMulti:
         h2r, h2c = engine.snakes[2].head
         assert obs0[CH_OPPONENT_HEADS, h1r, h1c] == 1.0
         assert obs0[CH_OPPONENT_HEADS, h2r, h2c] == 1.0
+
+    def test_auxiliary_channels_include_opponents(self):
+        engine = MultiplayerEngine(MatchConfig(player_count=2, seed=0))
+        obs = encode_multi(engine.grid, engine.snakes, 0)
+
+        assert 0.0 < obs[CH_OWN_LENGTH, 0, 0] < 1.0
+        assert 0.0 < obs[CH_OPPONENT_MEAN_LENGTH, 0, 0] < 1.0
+        assert obs[CH_DIR_RIGHT].sum() > 0.0
+        assert 0.0 <= obs[CH_NEAREST_APPLE_DISTANCE, 0, 0] <= 1.0
+        assert 0.0 <= obs[CH_NEAREST_DANGER_DISTANCE, 0, 0] <= 1.0
+
+    def test_relative_mode_shifts_to_perspective_head(self):
+        engine = MultiplayerEngine(MatchConfig(player_count=2, seed=0))
+        abs_obs = encode_multi(engine.grid, engine.snakes, 0, mode="absolute")
+        rel_obs = encode_multi(engine.grid, engine.snakes, 0, mode="relative")
+        h, w = engine.config.effective_height, engine.config.effective_width
+
+        own_head = engine.snakes[0].head
+        opp_head = engine.snakes[1].head
+        shift_r = (h // 2) - own_head[0]
+        shift_c = (w // 2) - own_head[1]
+        expected_opp = ((opp_head[0] + shift_r) % h, (opp_head[1] + shift_c) % w)
+
+        assert abs_obs[CH_OWN_HEAD, own_head[0], own_head[1]] == 1.0
+        assert rel_obs[CH_OWN_HEAD, h // 2, w // 2] == 1.0
+        assert rel_obs[CH_OPPONENT_HEADS, expected_opp[0], expected_opp[1]] == 1.0

@@ -3,33 +3,40 @@
 import torch
 
 from smart_snake.ai.networks import DQNNetwork, DuelingDQNNetwork
+from smart_snake.ai.state import NUM_CHANNELS
 
 
 class TestDQNNetwork:
     def test_output_shape(self):
-        net = DQNNetwork(in_channels=6, height=20, width=20, num_actions=4)
-        x = torch.randn(1, 6, 20, 20)
+        net = DQNNetwork(
+            in_channels=NUM_CHANNELS, height=20, width=20, num_actions=4,
+        )
+        x = torch.randn(1, NUM_CHANNELS, 20, 20)
         out = net(x)
         assert out.shape == (1, 4)
 
     def test_batch_output_shape(self):
-        net = DQNNetwork(in_channels=6, height=10, width=10, num_actions=4)
-        x = torch.randn(8, 6, 10, 10)
+        net = DQNNetwork(
+            in_channels=NUM_CHANNELS, height=10, width=10, num_actions=4,
+        )
+        x = torch.randn(8, NUM_CHANNELS, 10, 10)
         out = net(x)
         assert out.shape == (8, 4)
 
     def test_different_grid_size(self):
         net = DQNNetwork(
-            in_channels=6, height=15, width=25, num_actions=4,
+            in_channels=NUM_CHANNELS, height=15, width=25, num_actions=4,
             conv_channels=(16, 32),
         )
-        x = torch.randn(2, 6, 15, 25)
+        x = torch.randn(2, NUM_CHANNELS, 15, 25)
         out = net(x)
         assert out.shape == (2, 4)
 
     def test_gradient_flow(self):
-        net = DQNNetwork(in_channels=6, height=10, width=10, num_actions=4)
-        x = torch.randn(4, 6, 10, 10)
+        net = DQNNetwork(
+            in_channels=NUM_CHANNELS, height=10, width=10, num_actions=4,
+        )
+        x = torch.randn(4, NUM_CHANNELS, 10, 10)
         out = net(x)
         loss = out.sum()
         loss.backward()
@@ -40,26 +47,26 @@ class TestDQNNetwork:
 class TestDuelingDQNNetwork:
     def test_output_shape(self):
         net = DuelingDQNNetwork(
-            in_channels=6, height=20, width=20, num_actions=4,
+            in_channels=NUM_CHANNELS, height=20, width=20, num_actions=4,
         )
-        x = torch.randn(1, 6, 20, 20)
+        x = torch.randn(1, NUM_CHANNELS, 20, 20)
         out = net(x)
         assert out.shape == (1, 4)
 
     def test_batch_output_shape(self):
         net = DuelingDQNNetwork(
-            in_channels=6, height=10, width=10, num_actions=4,
+            in_channels=NUM_CHANNELS, height=10, width=10, num_actions=4,
         )
-        x = torch.randn(8, 6, 10, 10)
+        x = torch.randn(8, NUM_CHANNELS, 10, 10)
         out = net(x)
         assert out.shape == (8, 4)
 
     def test_advantage_mean_subtracted(self):
         """The mean advantage should be ~0 across actions for any input."""
         net = DuelingDQNNetwork(
-            in_channels=6, height=10, width=10, num_actions=4,
+            in_channels=NUM_CHANNELS, height=10, width=10, num_actions=4,
         )
-        x = torch.randn(4, 6, 10, 10)
+        x = torch.randn(4, NUM_CHANNELS, 10, 10)
         # Forward pass with value and advantage extraction.
         features = net.conv(x)
         value = net.value_stream(features)
@@ -71,9 +78,9 @@ class TestDuelingDQNNetwork:
 
     def test_gradient_flow(self):
         net = DuelingDQNNetwork(
-            in_channels=6, height=10, width=10, num_actions=4,
+            in_channels=NUM_CHANNELS, height=10, width=10, num_actions=4,
         )
-        x = torch.randn(4, 6, 10, 10)
+        x = torch.randn(4, NUM_CHANNELS, 10, 10)
         out = net(x)
         loss = out.sum()
         loss.backward()

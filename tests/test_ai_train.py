@@ -4,9 +4,9 @@ from smart_snake.ai.config import TrainingConfig
 from smart_snake.ai.train import SelfPlayTrainer
 
 
-def _fast_config() -> TrainingConfig:
+def _fast_config(**overrides) -> TrainingConfig:
     """Tiny config for fast smoke tests."""
-    return TrainingConfig(
+    defaults = dict(
         grid_width=10,
         grid_height=10,
         player_count=2,
@@ -23,9 +23,17 @@ def _fast_config() -> TrainingConfig:
         save_interval=100,
         prioritized_replay=False,
     )
+    defaults.update(overrides)
+    return TrainingConfig(**defaults)
 
 
 class TestSelfPlayTrainer:
+    def test_wires_state_encoding_mode(self):
+        cfg = _fast_config(state_encoding="relative")
+        trainer = SelfPlayTrainer(cfg, device="cpu")
+        assert trainer.env._state_encoding == "relative"
+        trainer.close()
+
     def test_run_episode_returns_metrics(self):
         trainer = SelfPlayTrainer(_fast_config(), device="cpu")
         metrics = trainer.run_episode()

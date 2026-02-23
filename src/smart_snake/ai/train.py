@@ -47,6 +47,7 @@ class SelfPlayTrainer:
             initial_snake_length=self.config.initial_snake_length,
             reward_config=self.config.reward,
             max_steps=self.config.max_steps_per_episode,
+            state_encoding=self.config.state_encoding,
         )
         self._rng = np.random.default_rng()
 

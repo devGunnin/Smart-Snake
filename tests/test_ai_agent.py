@@ -7,6 +7,7 @@ import torch
 from smart_snake.ai.agent import DQNAgent
 from smart_snake.ai.config import TrainingConfig
 from smart_snake.ai.replay_buffer import Transition
+from smart_snake.ai.state import NUM_CHANNELS
 
 
 def _small_config(**overrides) -> TrainingConfig:
@@ -31,8 +32,8 @@ def _small_config(**overrides) -> TrainingConfig:
 
 
 def _random_transition() -> Transition:
-    s = np.random.randn(6, 10, 10).astype(np.float32)
-    ns = np.random.randn(6, 10, 10).astype(np.float32)
+    s = np.random.randn(NUM_CHANNELS, 10, 10).astype(np.float32)
+    ns = np.random.randn(NUM_CHANNELS, 10, 10).astype(np.float32)
     return Transition(
         state=s, action=np.random.randint(4), reward=np.random.randn(),
         next_state=ns, done=bool(np.random.randint(2)),
@@ -76,20 +77,20 @@ class TestEpsilon:
 class TestSelectAction:
     def test_returns_valid_action(self):
         agent = DQNAgent(_small_config(), device="cpu")
-        state = np.random.randn(6, 10, 10).astype(np.float32)
+        state = np.random.randn(NUM_CHANNELS, 10, 10).astype(np.float32)
         action = agent.select_action(state)
         assert 0 <= action <= 3
 
     def test_greedy_action_deterministic(self):
         agent = DQNAgent(_small_config(epsilon_start=0.0, epsilon_end=0.0), device="cpu")
-        state = np.random.randn(6, 10, 10).astype(np.float32)
+        state = np.random.randn(NUM_CHANNELS, 10, 10).astype(np.float32)
         a1 = agent.select_action(state)
         a2 = agent.select_action(state)
         assert a1 == a2
 
     def test_explores_with_high_epsilon(self):
         agent = DQNAgent(_small_config(epsilon_start=1.0, epsilon_end=1.0), device="cpu")
-        state = np.random.randn(6, 10, 10).astype(np.float32)
+        state = np.random.randn(NUM_CHANNELS, 10, 10).astype(np.float32)
         # With epsilon=1.0, all actions are random. Over many trials we should
         # see more than one distinct action.
         actions = {agent.select_action(state) for _ in range(50)}

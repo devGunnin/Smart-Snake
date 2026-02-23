@@ -9,7 +9,7 @@ from smart_snake.ai.environment import (
     MultiSnakeEnv,
     SnakeEnv,
 )
-from smart_snake.ai.state import NUM_CHANNELS
+from smart_snake.ai.state import CH_OWN_HEAD, NUM_CHANNELS
 
 
 class TestSnakeEnvInit:
@@ -136,6 +136,13 @@ class TestMultiSnakeEnvReset:
         obs2, _ = env.reset(seed=42)
         for a, b in zip(obs1, obs2, strict=True):
             np.testing.assert_array_equal(a, b)
+
+    def test_relative_encoding_centers_own_head(self):
+        env = MultiSnakeEnv(player_count=2, seed=0, state_encoding="relative")
+        obs_list, _ = env.reset()
+        _, h, w = env.observation_space.shape
+        for obs in obs_list:
+            assert obs[CH_OWN_HEAD, h // 2, w // 2] == 1.0
 
 
 class TestMultiSnakeEnvStep:

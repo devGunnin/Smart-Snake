@@ -8,13 +8,14 @@ from smart_snake.ai.replay_buffer import (
     ReplayBuffer,
     Transition,
 )
+from smart_snake.ai.state import NUM_CHANNELS
 
 
 def _make_transition(i: int = 0) -> Transition:
     """Create a dummy transition for testing."""
-    s = np.zeros((6, 10, 10), dtype=np.float32)
+    s = np.zeros((NUM_CHANNELS, 10, 10), dtype=np.float32)
     s[0, 0, i % 10] = 1.0
-    ns = np.zeros((6, 10, 10), dtype=np.float32)
+    ns = np.zeros((NUM_CHANNELS, 10, 10), dtype=np.float32)
     ns[0, 0, (i + 1) % 10] = 1.0
     return Transition(state=s, action=i % 4, reward=float(i), next_state=ns, done=False)
 
