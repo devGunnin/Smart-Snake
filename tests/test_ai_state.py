@@ -23,7 +23,7 @@ from smart_snake.ai.state import (
     encode_single,
 )
 from smart_snake.engine import GameEngine
-from smart_snake.grid import CellType, Grid
+from smart_snake.grid import CellType, Grid, WallMode
 from smart_snake.multiplayer import MatchConfig, MultiplayerEngine
 from smart_snake.snake import Direction, Snake
 
@@ -67,7 +67,26 @@ class TestEncodeSingle:
         obs = encode_single(grid, snake)
         assert obs[CH_WALLS, 0, 0] == 1.0
         assert obs[CH_WALLS, 1, 1] == 1.0
-        assert obs[CH_WALLS].sum() == 2.0
+        # Death-mode boundaries are also encoded as walls (plus interior obstacle).
+        assert obs[CH_WALLS].sum() == 37.0
+
+    def test_wall_channel_includes_death_mode_boundaries(self):
+        grid = Grid(width=10, height=10, wall_mode=WallMode.DEATH)
+        snake = Snake(5, 5, Direction.RIGHT, length=3)
+        obs = encode_single(grid, snake)
+
+        assert obs[CH_WALLS, 0, 5] == 1.0
+        assert obs[CH_WALLS, 9, 5] == 1.0
+        assert obs[CH_WALLS, 5, 0] == 1.0
+        assert obs[CH_WALLS, 5, 9] == 1.0
+        assert obs[CH_WALLS, 5, 5] == 0.0
+        assert obs[CH_WALLS].sum() == 36.0
+
+    def test_wall_channel_excludes_wrap_mode_boundaries(self):
+        grid = Grid(width=10, height=10, wall_mode=WallMode.WRAP)
+        snake = Snake(5, 5, Direction.RIGHT, length=3)
+        obs = encode_single(grid, snake)
+        assert obs[CH_WALLS].sum() == 0.0
 
     def test_dead_snake_empty_channels(self):
         grid = Grid(width=10, height=10)
@@ -91,6 +110,21 @@ class TestEncodeSingle:
 
         assert 0.0 <= obs[CH_NEAREST_APPLE_DISTANCE, 0, 0] <= 1.0
         assert 0.0 <= obs[CH_NEAREST_DANGER_DISTANCE, 0, 0] <= 1.0
+
+    def test_nearest_danger_excludes_unreachable_neck_segment(self):
+        grid = Grid(width=10, height=10, wall_mode=WallMode.DEATH)
+        snake = Snake(5, 5, Direction.RIGHT, length=2)
+        obs = encode_single(grid, snake)
+
+        # With only head + neck, nearest danger should come from map boundaries.
+        expected = 4.0 / 18.0
+        assert obs[CH_NEAREST_DANGER_DISTANCE, 0, 0] == pytest.approx(expected)
+
+    def test_nearest_danger_ignores_boundaries_in_wrap_mode(self):
+        grid = Grid(width=10, height=10, wall_mode=WallMode.WRAP)
+        snake = Snake(5, 5, Direction.RIGHT, length=2)
+        obs = encode_single(grid, snake)
+        assert obs[CH_NEAREST_DANGER_DISTANCE, 0, 0] == 1.0
 
     def test_relative_mode_centers_head(self):
         grid = Grid(width=10, height=10)

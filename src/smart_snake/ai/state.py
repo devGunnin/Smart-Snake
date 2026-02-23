@@ -6,7 +6,7 @@ from typing import Literal
 
 import numpy as np
 
-from smart_snake.grid import CellType, Grid
+from smart_snake.grid import CellType, Grid, WallMode
 from smart_snake.snake import Direction, Snake
 
 # Channel indices for spatial observation channels.
@@ -76,7 +76,15 @@ def _encode_spatial_absolute(
 
     cells = grid.cells
     obs[CH_APPLES] = (cells == CellType.APPLE).astype(np.float32)
-    obs[CH_WALLS] = (cells == CellType.OBSTACLE).astype(np.float32)
+
+    wall_mask = cells == CellType.OBSTACLE
+    if grid.wall_mode == WallMode.DEATH:
+        wall_mask = wall_mask.copy()
+        wall_mask[0, :] = True
+        wall_mask[-1, :] = True
+        wall_mask[:, 0] = True
+        wall_mask[:, -1] = True
+    obs[CH_WALLS] = wall_mask.astype(np.float32)
     return obs
 
 
@@ -120,6 +128,14 @@ def _danger_cells(
     """Cells that are currently dangerous for the perspective snake."""
     danger: set[tuple[int, int]] = set()
 
+    if grid.wall_mode == WallMode.DEATH:
+        for r in range(grid.height):
+            danger.add((r, 0))
+            danger.add((r, grid.width - 1))
+        for c in range(grid.width):
+            danger.add((0, c))
+            danger.add((grid.height - 1, c))
+
     rows, cols = np.where(grid.cells == CellType.OBSTACLE)
     danger.update(zip(rows.tolist(), cols.tolist(), strict=True))
 
@@ -128,6 +144,9 @@ def _danger_cells(
             continue
         for idx, seg in enumerate(snake.body):
             if sid == perspective_id and idx == 0:
+                continue
+            if sid == perspective_id and idx == 1:
+                # Immediate reversal is disallowed, so the neck is not reachable.
                 continue
             danger.add(seg)
     return danger
