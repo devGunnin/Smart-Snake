@@ -71,16 +71,19 @@ def benchmark_throughput(
             env.reset(seed=int(rng.integers(2**31)))
 
         dones = [False] * batch_size
-        step_count = 0
+        step_counts = [0] * batch_size
 
-        while not all(dones) and step_count < max_steps:
+        while not all(dones):
             for i, env in enumerate(active_envs):
                 if dones[i]:
+                    continue
+                if step_counts[i] >= max_steps:
+                    dones[i] = True
                     continue
                 actions = rng.integers(4, size=player_count).tolist()
                 _, _, terminated, truncated, info = env.step(actions)
                 total_steps += 1
-                step_count += 1
+                step_counts[i] += 1
                 if info.get("game_over") or all(
                     t or tr
                     for t, tr in zip(terminated, truncated, strict=True)

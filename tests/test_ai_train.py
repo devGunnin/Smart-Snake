@@ -106,7 +106,17 @@ class TestSelfPlayTrainer:
         )
         trainer = SelfPlayTrainer(cfg, device="cpu")
         trainer.train()
-        assert trainer.total_episodes >= 4
+        assert trainer.total_episodes == 4
+        trainer.close()
+
+    def test_parallel_train_respects_max_episodes(self, tmp_path):
+        cfg = _fast_config(
+            num_envs=2, max_episodes=5,
+            checkpoint_dir=str(tmp_path / "ckpts"),
+        )
+        trainer = SelfPlayTrainer(cfg, device="cpu")
+        trainer.train()
+        assert trainer.total_episodes == 5
         trainer.close()
 
     def test_model_manager_exposed(self, tmp_path):

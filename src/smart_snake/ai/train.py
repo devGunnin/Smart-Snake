@@ -158,7 +158,9 @@ class SelfPlayTrainer:
             "winner": info.get("winner"),
         }
 
-    def run_parallel_episodes(self) -> list[dict]:
+    def run_parallel_episodes(
+        self, *, num_envs: int | None = None,
+    ) -> list[dict]:
         """Run one episode per parallel environment concurrently.
 
         Uses batched inference for action selection across all
@@ -168,13 +170,23 @@ class SelfPlayTrainer:
             return [self.run_episode()]
 
         cfg = self.config
-        n = self._num_envs
+        n = num_envs if num_envs is not None else self._num_envs
+        if not 1 <= n <= self._num_envs:
+            raise ValueError(
+                f"num_envs must be in [1, {self._num_envs}], got {n}.",
+            )
         num_agents = self._vec_env.num_agents
 
         seeds = [
             int(self._rng.integers(2**31)) for _ in range(n)
         ]
-        all_obs, _ = self._vec_env.reset_all(seeds=seeds)
+        if n == self._num_envs:
+            all_obs, _ = self._vec_env.reset_all(seeds=seeds)
+        else:
+            all_obs = []
+            for ei in range(n):
+                obs, _ = self._vec_env.envs[ei].reset(seed=seeds[ei])
+                all_obs.append(obs)
 
         states = [list(obs) for obs in all_obs]
         alive = [[True] * num_agents for _ in range(n)]
@@ -283,7 +295,10 @@ class SelfPlayTrainer:
         ep = 0
         while ep < cfg.max_episodes:
             if self._num_envs > 1:
-                results = self.run_parallel_episodes()
+                remaining = cfg.max_episodes - ep
+                results = self.run_parallel_episodes(
+                    num_envs=min(self._num_envs, remaining),
+                )
                 ep += len(results)
             else:
                 self.run_episode()

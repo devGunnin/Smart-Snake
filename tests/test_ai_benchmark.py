@@ -59,3 +59,39 @@ class TestBenchmarkThroughput:
         )
         assert result.total_games == 3
         assert result.total_steps > 0
+
+    def test_multi_env_max_steps_applies_per_game(self, monkeypatch):
+        class _FakeEnv:
+            def __init__(
+                self,
+                *,
+                max_steps: int,
+                **_kwargs,
+            ):
+                self._max_steps = max_steps
+                self._steps = 0
+
+            def reset(self, *, seed=None):
+                self._steps = 0
+                return [], {"seed": seed}
+
+            def step(self, actions):
+                _ = actions
+                self._steps += 1
+                done = self._steps >= self._max_steps
+                terminated = [done, done]
+                truncated = [False, False]
+                return [], [], terminated, truncated, {"game_over": done}
+
+        monkeypatch.setattr(
+            "smart_snake.ai.benchmark.MultiSnakeEnv", _FakeEnv,
+        )
+        result = benchmark_throughput(
+            num_envs=3,
+            num_games=6,
+            player_count=2,
+            grid_width=10,
+            grid_height=10,
+            max_steps=2,
+        )
+        assert result.total_steps == 12
