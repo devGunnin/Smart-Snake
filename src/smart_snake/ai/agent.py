@@ -98,6 +98,27 @@ class DQNAgent:
             q = self.online_net(t)
             return int(q.argmax(dim=1).item())
 
+    def select_actions_batch(
+        self,
+        states: list[np.ndarray],
+        rng: np.random.Generator | None = None,
+    ) -> list[int]:
+        """Epsilon-greedy action selection for a batch of states.
+
+        Performs a single forward pass for all states, then applies
+        per-element epsilon-greedy exploration.
+        """
+        gen = rng or np.random.default_rng()
+        batch_size = len(states)
+        random_mask = gen.random(batch_size) < self.epsilon
+        with torch.no_grad():
+            t = torch.from_numpy(np.stack(states)).to(self.device)
+            q = self.online_net(t)
+            greedy = q.argmax(dim=1).cpu().numpy()
+        random_actions = gen.integers(4, size=batch_size)
+        actions = np.where(random_mask, random_actions, greedy)
+        return actions.tolist()
+
     def store(self, transition: Transition) -> None:
         """Store a transition in the replay buffer."""
         self.buffer.add(transition)
