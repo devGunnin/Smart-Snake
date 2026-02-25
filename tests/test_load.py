@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import patch
 
 import pytest
 
+from smart_snake.server import game_manager as gm_mod
 from smart_snake.server.game_manager import GameManager
 
 
@@ -100,6 +102,53 @@ class TestConcurrentGames:
 
         # Different IP should still work.
         manager.create_game(client_ip="other-ip")
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_stale_entry_removed_on_check(self):
+        """Stale IP entries are removed immediately when re-checked."""
+        manager = GameManager()
+        # Inject a stale entry with an expired timestamp.
+        manager._rate_limits["stale-ip"] = [0.0]
+        manager._check_rate_limit("stale-ip")
+        assert "stale-ip" not in manager._rate_limits
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_compaction_sweeps_stale_keys(self):
+        """Periodic compaction removes entries for IPs never re-checked."""
+        manager = GameManager()
+        # Inject stale entries that won't be checked directly.
+        manager._rate_limits["old-ip-1"] = [0.0]
+        manager._rate_limits["old-ip-2"] = [0.0]
+        # Force compaction by backdating last compact time.
+        manager._last_rate_compact = 0.0
+        with patch.object(
+            gm_mod, "_RATE_COMPACT_INTERVAL", 0.0,
+        ):
+            manager._check_rate_limit("trigger-ip")
+        assert "old-ip-1" not in manager._rate_limits
+        assert "old-ip-2" not in manager._rate_limits
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_compaction_skipped_within_interval(self):
+        """Compaction is skipped when called within the interval gate."""
+        manager = GameManager()
+        manager._rate_limits["old-ip"] = [0.0]
+        # Set last compact to current time so interval hasn't elapsed.
+        import time
+        manager._last_rate_compact = time.monotonic()
+        manager._check_rate_limit("other-ip")
+        # old-ip was never the checked IP, so it persists (no sweep ran).
+        assert "old-ip" in manager._rate_limits
+
+    @pytest.mark.asyncio
+    async def test_cleanup_clears_rate_limits(self):
+        """GameManager.cleanup() releases rate-limit state."""
+        manager = GameManager()
+        manager.create_game(client_ip="ip-1")
+        manager.create_game(client_ip="ip-2")
+        assert len(manager._rate_limits) >= 2
+        await manager.cleanup()
+        assert len(manager._rate_limits) == 0
 
     @pytest.mark.asyncio
     async def test_finished_games_pruned_from_registry(self):
