@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 # Simple rate limit: max games created per IP within the window.
 _RATE_LIMIT_WINDOW = 60.0  # seconds
 _RATE_LIMIT_MAX = 10
+_RATE_COMPACT_INTERVAL = 60.0  # seconds between stale-key sweeps
 _MAX_FINISHED_GAMES = 100
 
 
@@ -68,6 +69,7 @@ class GameManager:
             raise ValueError("max_finished_games must be >= 0.")
         self._games: dict[str, GameInstance] = {}
         self._rate_limits: dict[str, list[float]] = {}
+        self._last_rate_compact: float = 0.0
         self._max_finished_games = max_finished_games
 
     def _check_rate_limit(self, client_ip: str) -> bool:
@@ -75,8 +77,28 @@ class GameManager:
         now = time.monotonic()
         timestamps = self._rate_limits.get(client_ip, [])
         timestamps = [t for t in timestamps if now - t < _RATE_LIMIT_WINDOW]
-        self._rate_limits[client_ip] = timestamps
+        if timestamps:
+            self._rate_limits[client_ip] = timestamps
+        else:
+            self._rate_limits.pop(client_ip, None)
+        self._compact_rate_limits(now)
         return len(timestamps) < _RATE_LIMIT_MAX
+
+    def _compact_rate_limits(self, now: float) -> None:
+        """Remove rate-limit entries whose timestamps have all expired."""
+        if now - self._last_rate_compact < _RATE_COMPACT_INTERVAL:
+            return
+        self._last_rate_compact = now
+        stale_ips = [
+            ip for ip, ts in self._rate_limits.items()
+            if all(now - t >= _RATE_LIMIT_WINDOW for t in ts)
+        ]
+        for ip in stale_ips:
+            del self._rate_limits[ip]
+        if stale_ips:
+            logger.info(
+                "Compacted %d stale rate-limit entries.", len(stale_ips),
+            )
 
     def _record_creation(self, client_ip: str) -> None:
         self._rate_limits.setdefault(client_ip, []).append(time.monotonic())
@@ -287,7 +309,7 @@ class GameManager:
                 game.spectators.remove(ws)
 
     async def cleanup(self) -> None:
-        """Cancel all running tick loops."""
+        """Cancel all running tick loops and release rate-limit state."""
         for game in self._games.values():
             if game._task and not game._task.done():
                 game._task.cancel()
@@ -297,4 +319,5 @@ class GameManager:
         ]
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        self._rate_limits.clear()
         logger.info("GameManager cleanup complete.")
