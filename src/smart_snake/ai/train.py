@@ -298,20 +298,36 @@ class SelfPlayTrainer:
 
         ep = 0
         while ep < cfg.max_episodes:
+            prev_ep = ep
             if self._num_envs > 1:
                 remaining = cfg.max_episodes - ep
+                batch_size = min(self._num_envs, remaining)
+                batch_size = min(
+                    batch_size,
+                    self._episodes_until_next_interval(
+                        ep, cfg.log_interval,
+                    ),
+                    self._episodes_until_next_interval(
+                        ep, cfg.save_interval,
+                    ),
+                )
                 results = self.run_parallel_episodes(
-                    num_envs=min(self._num_envs, remaining),
+                    num_envs=batch_size,
                 )
                 ep += len(results)
             else:
                 self.run_episode()
                 ep += 1
 
-            if ep % cfg.log_interval == 0 or ep >= cfg.max_episodes:
+            if (
+                self._crossed_interval(
+                    prev_ep, ep, cfg.log_interval,
+                )
+                or ep >= cfg.max_episodes
+            ):
                 self._log_metrics(ep, start)
 
-            if ep % cfg.save_interval == 0:
+            if self._crossed_interval(prev_ep, ep, cfg.save_interval):
                 self._save_versioned_checkpoint(ep)
 
         # Final checkpoint.
@@ -323,6 +339,32 @@ class SelfPlayTrainer:
         logger.info(
             "Training complete: %d episodes, %d total steps.",
             self.total_episodes, self.total_steps,
+        )
+
+    @staticmethod
+    def _episodes_until_next_interval(
+        current_episode: int, interval: int,
+    ) -> int:
+        """Return episodes remaining until the next positive interval edge."""
+        if interval < 1:
+            raise ValueError(
+                f"interval must be at least 1, got {interval}.",
+            )
+        remainder = current_episode % interval
+        return interval if remainder == 0 else interval - remainder
+
+    @staticmethod
+    def _crossed_interval(
+        prev_episode: int, current_episode: int, interval: int,
+    ) -> bool:
+        """Return True if any interval boundary was crossed."""
+        if interval < 1:
+            raise ValueError(
+                f"interval must be at least 1, got {interval}.",
+            )
+        return (
+            prev_episode // interval
+            < current_episode // interval
         )
 
     def _log_metrics(self, ep: int, start: float) -> None:
