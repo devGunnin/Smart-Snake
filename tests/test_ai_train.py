@@ -88,3 +88,42 @@ class TestSelfPlayTrainer:
         metrics = trainer.run_episode()
         assert metrics["steps"] > 0
         trainer.close()
+
+    def test_parallel_envs(self):
+        cfg = _fast_config(num_envs=2, max_episodes=4)
+        trainer = SelfPlayTrainer(cfg, device="cpu")
+        assert trainer._num_envs == 2
+        assert trainer._vec_env is not None
+        results = trainer.run_parallel_episodes()
+        assert len(results) == 2
+        assert trainer.total_episodes == 2
+        trainer.close()
+
+    def test_parallel_train_completes(self, tmp_path):
+        cfg = _fast_config(
+            num_envs=2, max_episodes=4,
+            checkpoint_dir=str(tmp_path / "ckpts"),
+        )
+        trainer = SelfPlayTrainer(cfg, device="cpu")
+        trainer.train()
+        assert trainer.total_episodes >= 4
+        trainer.close()
+
+    def test_model_manager_exposed(self, tmp_path):
+        cfg = _fast_config(
+            checkpoint_dir=str(tmp_path / "ckpts"),
+        )
+        trainer = SelfPlayTrainer(cfg, device="cpu")
+        assert trainer.model_manager is not None
+        trainer.close()
+
+    def test_versioned_checkpoints_created(self, tmp_path):
+        cfg = _fast_config(
+            save_interval=2,
+            checkpoint_dir=str(tmp_path / "ckpts"),
+        )
+        trainer = SelfPlayTrainer(cfg, device="cpu")
+        trainer.train()
+        mgr = trainer.model_manager
+        assert len(mgr.versions) > 0
+        trainer.close()

@@ -75,6 +75,9 @@ class TrainingConfig:
     log_interval: int = 100
     save_interval: int = 1_000
 
+    # Parallel environments
+    num_envs: int = 1
+
     # Rewards
     reward: RewardConfig = field(default_factory=RewardConfig)
 
