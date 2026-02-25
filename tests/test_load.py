@@ -90,6 +90,50 @@ class TestConcurrentGames:
         assert finished == 20, f"Only {finished}/20 games finished"
         await manager.cleanup()
 
+    @pytest.mark.stress
+    @pytest.mark.asyncio
+    async def test_100_concurrent_4_player_games(self):
+        """Stress: 100 simultaneous 4-player games all run to completion."""
+        num_games = 100
+        manager = GameManager()
+        game_ids: list[str] = []
+        host_tokens: list[str] = []
+
+        for i in range(num_games):
+            game = manager.create_game(
+                player_count=4,
+                tick_rate_ms=10,
+                client_ip=f"stress-{i % 50}",
+            )
+            game_ids.append(game.game_id)
+
+            tokens = []
+            for j in range(4):
+                slot = manager.join_game(game.game_id, f"p{j}-g{i}")
+                tokens.append(slot.token)
+            host_tokens.append(tokens[0])
+
+        for gid, token in zip(game_ids, host_tokens, strict=True):
+            manager.start_game(gid, token)
+
+        for _ in range(600):
+            await asyncio.sleep(0.05)
+            statuses = [
+                manager.get_game(gid).status.value for gid in game_ids
+            ]
+            if all(s == "finished" for s in statuses):
+                break
+
+        finished = sum(
+            1
+            for gid in game_ids
+            if manager.get_game(gid).status.value == "finished"
+        )
+        assert finished == num_games, (
+            f"Only {finished}/{num_games} games finished"
+        )
+        await manager.cleanup()
+
     @pytest.mark.asyncio
     async def test_rate_limiting(self):
         """Verify rate limiter blocks excessive creation from one IP."""

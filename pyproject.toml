@@ -36,8 +36,11 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short -m 'not stress'"
 asyncio_mode = "auto"
+markers = [
+    "stress: heavyweight stress tests (deselected by default, run with -m stress)",
+]
 
 [tool.ruff]
 line-length = 100
