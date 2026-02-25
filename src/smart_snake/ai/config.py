@@ -91,6 +91,10 @@ class TrainingConfig:
                 "state_encoding must be either 'absolute' or 'relative', "
                 f"got {self.state_encoding!r}.",
             )
+        if self.num_envs < 1:
+            raise ValueError(
+                f"num_envs must be at least 1, got {self.num_envs}.",
+            )
 
     def to_dict(self) -> dict:
         """Serialize to a plain dict (tuples become lists)."""

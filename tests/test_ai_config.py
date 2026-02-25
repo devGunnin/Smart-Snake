@@ -74,3 +74,7 @@ class TestTrainingConfig:
     def test_invalid_state_encoding_rejected(self):
         with pytest.raises(ValueError, match="state_encoding must be either"):
             TrainingConfig(state_encoding="diagonal")  # type: ignore[arg-type]
+
+    def test_invalid_num_envs_rejected(self):
+        with pytest.raises(ValueError, match="num_envs must be at least 1"):
+            TrainingConfig(num_envs=0)

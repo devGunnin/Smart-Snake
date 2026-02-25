@@ -41,7 +41,7 @@ def _build_parser() -> argparse.ArgumentParser:
     train_p.add_argument("--grid-width", type=int, default=None)
     train_p.add_argument("--grid-height", type=int, default=None)
     train_p.add_argument("--players", type=int, default=None)
-    train_p.add_argument("--num-envs", type=int, default=None)
+    train_p.add_argument("--num-envs", type=_positive_int, default=None)
     train_p.add_argument("--learning-rate", type=float, default=None)
     train_p.add_argument("--batch-size", type=int, default=None)
     train_p.add_argument("--gamma", type=float, default=None)

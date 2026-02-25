@@ -43,7 +43,11 @@ class SelfPlayTrainer:
     ) -> None:
         self.config = config or TrainingConfig()
         self.agent = DQNAgent(self.config, device=device)
-        self._num_envs = max(1, self.config.num_envs)
+        if self.config.num_envs < 1:
+            raise ValueError(
+                f"num_envs must be at least 1, got {self.config.num_envs}.",
+            )
+        self._num_envs = self.config.num_envs
 
         env_kwargs = dict(
             player_count=self.config.player_count,

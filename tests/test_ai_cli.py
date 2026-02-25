@@ -66,6 +66,10 @@ class TestCLITrain:
         ])
         assert result == 0
 
+    def test_train_num_envs_must_be_positive(self):
+        with pytest.raises(SystemExit, match="2"):
+            main(["train", "--num-envs", "0"])
+
 
 class TestCLIBenchmark:
     def test_benchmark_runs(self, capsys):

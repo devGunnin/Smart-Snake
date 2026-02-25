@@ -1,5 +1,7 @@
 """Tests for the self-play training loop."""
 
+import pytest
+
 from smart_snake.ai.config import TrainingConfig
 from smart_snake.ai.train import SelfPlayTrainer
 
@@ -118,6 +120,12 @@ class TestSelfPlayTrainer:
         trainer.train()
         assert trainer.total_episodes == 5
         trainer.close()
+
+    def test_rejects_invalid_num_envs(self):
+        cfg = _fast_config()
+        object.__setattr__(cfg, "num_envs", 0)
+        with pytest.raises(ValueError, match="num_envs must be at least 1"):
+            SelfPlayTrainer(cfg, device="cpu")
 
     def test_model_manager_exposed(self, tmp_path):
         cfg = _fast_config(
