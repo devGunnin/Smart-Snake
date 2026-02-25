@@ -48,6 +48,11 @@ def benchmark_throughput(
     Runs *num_games* episodes across *num_envs* environments using
     random actions and reports games/second and steps/second.
     """
+    if num_envs < 1:
+        raise ValueError(
+            f"num_envs must be at least 1, got {num_envs}."
+        )
+
     envs = [
         MultiSnakeEnv(
             player_count=player_count,

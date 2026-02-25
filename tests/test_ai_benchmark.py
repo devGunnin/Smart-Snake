@@ -1,5 +1,7 @@
 """Tests for the performance benchmarking utilities."""
 
+import pytest
+
 from smart_snake.ai.benchmark import BenchmarkResult, benchmark_throughput
 
 
@@ -95,3 +97,7 @@ class TestBenchmarkThroughput:
             max_steps=2,
         )
         assert result.total_steps == 12
+
+    def test_num_envs_must_be_positive(self):
+        with pytest.raises(ValueError, match="num_envs must be at least 1"):
+            benchmark_throughput(num_envs=0, num_games=1)

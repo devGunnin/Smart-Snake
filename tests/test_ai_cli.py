@@ -1,5 +1,7 @@
 """Tests for the CLI training launcher."""
 
+import pytest
+
 from smart_snake.ai.cli import _build_parser, main
 
 
@@ -78,6 +80,10 @@ class TestCLIBenchmark:
         captured = capsys.readouterr()
         assert "Benchmark:" in captured.out
         assert "games/s" in captured.out
+
+    def test_benchmark_num_envs_must_be_positive(self):
+        with pytest.raises(SystemExit, match="2"):
+            main(["benchmark", "--num-envs", "0"])
 
 
 class TestCLIExport:

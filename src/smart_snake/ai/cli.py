@@ -9,6 +9,19 @@ import sys
 logger = logging.getLogger(__name__)
 
 
+def _positive_int(value: str) -> int:
+    """argparse type that accepts positive integers only."""
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"invalid integer value: {value!r}"
+        ) from exc
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return parsed
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="smart-snake-train",
@@ -56,7 +69,7 @@ def _build_parser() -> argparse.ArgumentParser:
     bench_p = sub.add_parser(
         "benchmark", help="Measure simulation throughput.",
     )
-    bench_p.add_argument("--num-envs", type=int, default=1)
+    bench_p.add_argument("--num-envs", type=_positive_int, default=1)
     bench_p.add_argument("--num-games", type=int, default=100)
     bench_p.add_argument("--players", type=int, default=2)
     bench_p.add_argument("--grid-width", type=int, default=20)
