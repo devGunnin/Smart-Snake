@@ -83,6 +83,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--reward-step-penalty", type=float, default=None,
         help="Per-step penalty.",
     )
+    train_p.add_argument(
+        "--reward-apple-approach", type=float, default=None,
+        help="Reward for moving closer to nearest apple.",
+    )
+    train_p.add_argument(
+        "--reward-apple-retreat", type=float, default=None,
+        help="Penalty for moving away from nearest apple.",
+    )
 
     # --- benchmark ---
     bench_p = sub.add_parser(
@@ -148,6 +156,8 @@ def _run_train(args: argparse.Namespace) -> int:
         "reward_apple": "apple",
         "reward_death": "death",
         "reward_step_penalty": "step_penalty",
+        "reward_apple_approach": "apple_approach",
+        "reward_apple_retreat": "apple_retreat",
     }
     for cli_name, reward_key in reward_flag_map.items():
         val = getattr(args, cli_name, None)

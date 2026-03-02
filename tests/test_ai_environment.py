@@ -52,12 +52,15 @@ class TestSnakeEnvStep:
         assert "score" in info
 
     def test_step_penalty_applied(self):
-        cfg = RewardConfig(step_penalty=-0.01, apple=1.0, death=-1.0)
+        cfg = RewardConfig(
+            step_penalty=-0.05, apple=1.0, death=-1.0,
+            apple_approach=0.0, apple_retreat=0.0,
+        )
         env = SnakeEnv(width=20, height=20, seed=0, reward_config=cfg)
         env.reset()
         _, reward, terminated, _, _ = env.step(0)
         if not terminated:
-            assert reward == pytest.approx(-0.01, abs=1e-6)
+            assert reward == pytest.approx(-0.05, abs=1e-6)
 
     def test_death_reward(self):
         cfg = RewardConfig(death=-5.0, step_penalty=0.0)
@@ -194,3 +197,68 @@ class TestMultiSnakeEnvStep:
             env.step([-1, 0])
         with pytest.raises(ValueError, match="agent 1"):
             env.step([0, 4])
+
+
+class TestAppleProximityReward:
+    """Tests for the apple-proximity reward shaping."""
+
+    def test_proximity_reward_affects_single_player_reward(self):
+        """With proximity enabled, reward differs from bare step penalty."""
+        cfg_with = RewardConfig(
+            step_penalty=0.0, apple=0.0, death=0.0,
+            apple_approach=1.0, apple_retreat=-1.0,
+        )
+        env = SnakeEnv(
+            width=10, height=10, seed=42, reward_config=cfg_with,
+        )
+        env.reset()
+        rewards = []
+        for _ in range(10):
+            _, r, term, _, _ = env.step(0)
+            rewards.append(r)
+            if term:
+                break
+        # At least one step should have non-zero proximity reward.
+        assert any(r != 0.0 for r in rewards if r != 0.0)
+
+    def test_proximity_disabled_gives_zero(self):
+        """With proximity weights at 0, no proximity contribution."""
+        cfg = RewardConfig(
+            step_penalty=0.0, apple=0.0, death=0.0,
+            apple_approach=0.0, apple_retreat=0.0,
+            survival_bonus=0.0,
+        )
+        env = SnakeEnv(
+            width=10, height=10, seed=42, reward_config=cfg,
+        )
+        env.reset()
+        for _ in range(5):
+            _, r, term, _, _ = env.step(0)
+            if not term:
+                assert r == pytest.approx(0.0)
+            if term:
+                break
+
+    def test_multi_snake_proximity_reward(self):
+        """Multi-agent env includes proximity reward for alive agents."""
+        cfg = RewardConfig(
+            step_penalty=0.0, apple=0.0, death=0.0,
+            apple_approach=1.0, apple_retreat=-1.0,
+            survival_bonus=0.0, kill_opponent=0.0,
+        )
+        env = MultiSnakeEnv(
+            player_count=2, seed=42, reward_config=cfg,
+        )
+        env.reset()
+        all_rewards: list[list[float]] = []
+        for _ in range(10):
+            _, rewards, terminated, _, info = env.step([0, 1])
+            all_rewards.append(rewards)
+            if info.get("game_over"):
+                break
+        # At least one agent should have a non-zero proximity reward.
+        assert any(
+            r != 0.0
+            for step_rewards in all_rewards
+            for r in step_rewards
+        )

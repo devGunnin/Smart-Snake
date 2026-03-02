@@ -15,11 +15,20 @@ import numpy as np
 from smart_snake.ai.config import RewardConfig, StateEncodingMode
 from smart_snake.ai.state import NUM_CHANNELS, encode_multi, encode_single
 from smart_snake.engine import GameEngine
-from smart_snake.grid import WallMode
+from smart_snake.grid import CellType, WallMode
 from smart_snake.multiplayer import MatchConfig, MultiplayerEngine
 from smart_snake.snake import Direction
 
 logger = logging.getLogger(__name__)
+
+
+def _nearest_apple_distance(grid_cells: np.ndarray, head: tuple[int, int]) -> float:
+    """Manhattan distance from *head* to the nearest apple, or inf if none."""
+    rows, cols = np.where(grid_cells == CellType.APPLE)
+    if len(rows) == 0:
+        return float("inf")
+    return float(np.min(np.abs(rows - head[0]) + np.abs(cols - head[1])))
+
 
 # Absolute action mapping: index → Direction.
 ACTION_TO_DIRECTION: list[Direction] = [
@@ -90,6 +99,7 @@ class SnakeEnv:
 
         self._engine: GameEngine | None = None
         self._steps = 0
+        self._prev_apple_dist: float = float("inf")
 
     def reset(
         self, *, seed: int | None = None,
@@ -104,6 +114,9 @@ class SnakeEnv:
             seed=s,
         )
         self._steps = 0
+        self._prev_apple_dist = _nearest_apple_distance(
+            self._engine.grid.cells, self._engine.snake.head,
+        )
         obs = encode_single(
             self._engine.grid, self._engine.snake, mode=self._state_encoding,
         )
@@ -126,11 +139,27 @@ class SnakeEnv:
             self._engine.grid, self._engine.snake, mode=self._state_encoding,
         )
 
+        ate_apple = self._engine.score > prev_score
         reward = self._reward_cfg.step_penalty
-        if self._engine.score > prev_score:
+        if ate_apple:
             reward += self._reward_cfg.apple
         if self._engine.game_over:
             reward += self._reward_cfg.death
+
+        # Apple proximity shaping (skip on eat and death steps).
+        if not ate_apple and not self._engine.game_over:
+            curr_dist = _nearest_apple_distance(
+                self._engine.grid.cells, self._engine.snake.head,
+            )
+            if curr_dist < self._prev_apple_dist:
+                reward += self._reward_cfg.apple_approach
+            elif curr_dist > self._prev_apple_dist:
+                reward += self._reward_cfg.apple_retreat
+            self._prev_apple_dist = curr_dist
+        elif ate_apple and not self._engine.game_over:
+            self._prev_apple_dist = _nearest_apple_distance(
+                self._engine.grid.cells, self._engine.snake.head,
+            )
 
         terminated = self._engine.game_over
         truncated = (not terminated) and (self._steps >= self._max_steps)
@@ -207,6 +236,7 @@ class MultiSnakeEnv:
         self._engine: MultiplayerEngine | None = None
         self._steps = 0
         self._prev_alive: list[bool] = []
+        self._prev_apple_dists: list[float] = []
 
     def reset(
         self, *, seed: int | None = None,
@@ -226,6 +256,12 @@ class MultiSnakeEnv:
         )
         self._steps = 0
         self._prev_alive = [True] * self._player_count
+        self._prev_apple_dists = [
+            _nearest_apple_distance(
+                self._engine.grid.cells, self._engine.snakes[i].head,
+            )
+            for i in range(self._player_count)
+        ]
 
         obs = [
             encode_multi(
@@ -284,23 +320,54 @@ class MultiSnakeEnv:
                 ),
             )
 
+            ate_apple = (
+                self._engine.players[sid].score > prev_scores[sid]
+            )
+            just_died = (
+                self._prev_alive[sid]
+                and not self._engine.snakes[sid].alive
+            )
+
             r = self._reward_cfg.step_penalty
-            if self._engine.players[sid].score > prev_scores[sid]:
+            if ate_apple:
                 r += self._reward_cfg.apple
-            if self._prev_alive[sid] and not self._engine.snakes[sid].alive:
+            if just_died:
                 r += self._reward_cfg.death
             if self._reward_cfg.survival_bonus and self._engine.snakes[sid].alive:
                 r += self._reward_cfg.survival_bonus
 
+            # Apple proximity shaping (skip on eat and death steps).
+            if (
+                self._engine.snakes[sid].alive
+                and not ate_apple
+                and not just_died
+            ):
+                curr_dist = _nearest_apple_distance(
+                    self._engine.grid.cells,
+                    self._engine.snakes[sid].head,
+                )
+                if curr_dist < self._prev_apple_dists[sid]:
+                    r += self._reward_cfg.apple_approach
+                elif curr_dist > self._prev_apple_dists[sid]:
+                    r += self._reward_cfg.apple_retreat
+                self._prev_apple_dists[sid] = curr_dist
+            elif ate_apple and self._engine.snakes[sid].alive:
+                self._prev_apple_dists[sid] = _nearest_apple_distance(
+                    self._engine.grid.cells,
+                    self._engine.snakes[sid].head,
+                )
+
             # Kill-opponent reward: count opponents that just died.
-            if self._reward_cfg.kill_opponent:
+            if (
+                self._reward_cfg.kill_opponent
+                and self._engine.snakes[sid].alive
+            ):
                 for oid in range(self._player_count):
                     if oid == sid:
                         continue
                     if (
                         self._prev_alive[oid]
                         and not self._engine.snakes[oid].alive
-                        and self._engine.snakes[sid].alive
                     ):
                         r += self._reward_cfg.kill_opponent
             rewards.append(r)
