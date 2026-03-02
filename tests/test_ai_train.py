@@ -101,6 +101,77 @@ class TestSelfPlayTrainer:
         assert len(trainer.losses) > 0
         trainer.close()
 
+    def test_episode_metrics_span_multiple_rollouts(
+        self, monkeypatch,
+    ):
+        cfg = _fast_config(
+            max_episodes=1,
+            num_envs=1,
+            rollout_steps=1,
+            player_count=2,
+        )
+        trainer = SelfPlayTrainer(cfg, device="cpu")
+        obs_shape = trainer._rollout_buffer.obs_shape
+
+        class _LongEpisodeEnv:
+            def __init__(self):
+                self._steps = 0
+
+            def reset(self, seed=None):
+                del seed
+                self._steps = 0
+                obs = [
+                    np.zeros(obs_shape, dtype=np.float32)
+                    for _ in range(cfg.player_count)
+                ]
+                return obs, {}
+
+            def get_action_masks(self):
+                return [
+                    np.ones(4, dtype=bool)
+                    for _ in range(cfg.player_count)
+                ]
+
+            def step(self, _actions):
+                self._steps += 1
+                obs = [
+                    np.zeros(obs_shape, dtype=np.float32)
+                    for _ in range(cfg.player_count)
+                ]
+                rewards = [1.0, 3.0]
+                done = self._steps >= 3
+                terminated = [done] * cfg.player_count
+                truncated = [False] * cfg.player_count
+                info = {}
+                if done:
+                    info = {
+                        "game_over": True,
+                        "winner": 0,
+                        "scores": [1.0, 2.0],
+                    }
+                return obs, rewards, terminated, truncated, info
+
+        trainer._envs = [_LongEpisodeEnv()]
+        monkeypatch.setattr(
+            trainer.agent,
+            "sample_opponent",
+            lambda rng: None,
+        )
+        monkeypatch.setattr(
+            trainer.agent,
+            "select_action",
+            lambda *_args, **_kwargs: (0, 0.0, 0.0),
+        )
+
+        states, _ = trainer._reset_envs()
+        for _ in range(3):
+            states, _ = trainer._collect_rollout(states)
+
+        assert trainer.total_episodes == 1
+        assert trainer.episode_lengths[-1] == 3
+        assert trainer.episode_rewards[-1] == 6.0
+        trainer.close()
+
     def test_samples_snapshot_opponents_during_rollout(self, monkeypatch):
         cfg = _fast_config(
             max_episodes=1,

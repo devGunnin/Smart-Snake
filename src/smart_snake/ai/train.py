@@ -95,6 +95,11 @@ class SelfPlayTrainer:
         self.losses: deque[float] = deque(maxlen=100)
         self.total_steps = 0
         self.total_episodes = 0
+        self._env_episode_steps = [0] * self._num_envs
+        self._env_episode_rewards: list[list[float]] = [
+            [0.0] * self.config.player_count
+            for _ in range(self._num_envs)
+        ]
 
     @property
     def model_manager(self) -> ModelManager:
@@ -114,6 +119,10 @@ class SelfPlayTrainer:
             )
             all_obs.append(list(obs))
             all_info.append(info)
+            self._env_episode_steps[ei] = 0
+            self._env_episode_rewards[ei] = [
+                0.0
+            ] * self.config.player_count
             self._learner_ids[ei] = int(
                 self._rng.integers(self.config.player_count),
             )
@@ -134,10 +143,6 @@ class SelfPlayTrainer:
         cfg = self.config
         num_players = cfg.player_count
         completed_episodes = 0
-        env_steps = [0] * self._num_envs
-        env_rewards: list[list[float]] = [
-            [0.0] * num_players for _ in range(self._num_envs)
-        ]
 
         self._rollout_buffer.reset()
 
@@ -200,11 +205,11 @@ class SelfPlayTrainer:
                 next_obs, rewards, terminated, truncated, info = (
                     self._envs[ei].step(env_actions)
                 )
-                env_steps[ei] += 1
+                self._env_episode_steps[ei] += 1
                 self.total_steps += 1
 
                 for sid in range(num_players):
-                    env_rewards[ei][sid] += rewards[sid]
+                    self._env_episode_rewards[ei][sid] += rewards[sid]
 
                 step_states[ei] = states[ei][learner_sid]
                 step_actions[ei] = learner_action
@@ -222,9 +227,13 @@ class SelfPlayTrainer:
                     terminated[s] or truncated[s]
                     for s in range(num_players)
                 ):
-                    mean_r = float(np.mean(env_rewards[ei]))
+                    mean_r = float(
+                        np.mean(self._env_episode_rewards[ei]),
+                    )
                     self.episode_rewards.append(mean_r)
-                    self.episode_lengths.append(env_steps[ei])
+                    self.episode_lengths.append(
+                        self._env_episode_steps[ei],
+                    )
                     self.episode_wins.append(
                         1 if info.get("winner") is not None else 0,
                     )
@@ -243,8 +252,10 @@ class SelfPlayTrainer:
                             seed=int(self._rng.integers(2**31)),
                         )
                         states[ei] = list(obs)
-                        env_steps[ei] = 0
-                        env_rewards[ei] = [0.0] * num_players
+                        self._env_episode_steps[ei] = 0
+                        self._env_episode_rewards[ei] = (
+                            [0.0] * num_players
+                        )
                         self._learner_ids[ei] = int(
                             self._rng.integers(num_players),
                         )
