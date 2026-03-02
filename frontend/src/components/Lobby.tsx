@@ -37,7 +37,7 @@ export default function Lobby({ onJoined }: LobbyProps) {
   const [aiCount, setAiCount] = useState(0);
   const [aiDifficulty, setAiDifficulty] =
     useState<DifficultyTier>("medium");
-  const [tickRate, setTickRate] = useState(200);
+  const [tickRate, setTickRate] = useState(150);
 
   const refreshGames = useCallback(async () => {
     try {
