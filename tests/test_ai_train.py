@@ -1,5 +1,6 @@
 """Tests for the MAPPO self-play training loop."""
 
+import numpy as np
 import pytest
 
 from smart_snake.ai.config import TrainingConfig
@@ -31,6 +32,15 @@ def _fast_config(**overrides) -> TrainingConfig:
 
 
 class TestSelfPlayTrainer:
+    def test_crossed_intervals_returns_all_boundaries(self):
+        assert SelfPlayTrainer._crossed_intervals(0, 25, 10) == [
+            10, 20,
+        ]
+        assert SelfPlayTrainer._crossed_intervals(10, 25, 10) == [
+            20,
+        ]
+        assert SelfPlayTrainer._crossed_intervals(20, 25, 10) == []
+
     def test_wires_state_encoding_mode(self):
         cfg = _fast_config(state_encoding="relative")
         trainer = SelfPlayTrainer(cfg, device="cpu")
@@ -127,6 +137,89 @@ class TestSelfPlayTrainer:
         trainer.train()
         mgr = trainer.model_manager
         assert len(mgr.versions) > 0
+        trainer.close()
+
+    def test_processes_all_crossed_interval_boundaries(
+        self, monkeypatch, tmp_path,
+    ):
+        cfg = _fast_config(
+            max_episodes=25,
+            log_interval=10,
+            save_interval=10,
+            snapshot_interval=10,
+            checkpoint_dir=str(tmp_path / "ckpts"),
+        )
+        trainer = SelfPlayTrainer(cfg, device="cpu")
+
+        obs = np.zeros(
+            trainer._rollout_buffer.obs_shape, dtype=np.float32,
+        )
+        states = [
+            [obs.copy() for _ in range(cfg.player_count)]
+            for _ in range(cfg.num_envs)
+        ]
+
+        class _StubRolloutBuffer:
+            def __init__(self, obs_shape):
+                self.obs_shape = obs_shape
+
+            def __len__(self):
+                return 1
+
+            def compute_returns(self, *_args, **_kwargs):
+                return None
+
+            def generate_batches(self, *_args, **_kwargs):
+                return [None]
+
+        trainer._rollout_buffer = _StubRolloutBuffer(  # type: ignore[assignment]
+            trainer._rollout_buffer.obs_shape,
+        )
+
+        episode_targets = iter((23, 25))
+        log_calls: list[int] = []
+        save_calls: list[tuple[int, bool]] = []
+        snapshot_calls = {"count": 0}
+
+        def _fake_collect(current_states):
+            trainer.total_episodes = next(episode_targets)
+            return current_states, 1
+
+        monkeypatch.setattr(
+            trainer, "_reset_envs", lambda: (states, []),
+        )
+        monkeypatch.setattr(trainer, "_collect_rollout", _fake_collect)
+        monkeypatch.setattr(
+            trainer.agent,
+            "get_values",
+            lambda *_args, **_kwargs: [0.0] * trainer._num_envs,
+        )
+        monkeypatch.setattr(
+            trainer.agent,
+            "update",
+            lambda *_args, **_kwargs: {"total_loss": 0.0},
+        )
+        monkeypatch.setattr(
+            trainer.agent,
+            "save_snapshot",
+            lambda: snapshot_calls.__setitem__(
+                "count", snapshot_calls["count"] + 1,
+            ),
+        )
+        monkeypatch.setattr(
+            trainer, "_log_metrics", lambda ep, _start: log_calls.append(ep),
+        )
+        monkeypatch.setattr(
+            trainer,
+            "_save_versioned_checkpoint",
+            lambda ep, final=False: save_calls.append((ep, final)),
+        )
+
+        trainer.train()
+
+        assert snapshot_calls["count"] == 2
+        assert log_calls == [10, 20, 25]
+        assert save_calls == [(10, False), (20, False), (25, True)]
         trainer.close()
 
     def test_episode_scores_tracked(self):

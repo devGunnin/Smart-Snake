@@ -287,6 +287,7 @@ class SelfPlayTrainer:
 
         prev_log_ep = 0
         prev_save_ep = 0
+        prev_snapshot_ep = 0
 
         while self.total_episodes < cfg.max_episodes:
             # Collect rollout.
@@ -316,28 +317,38 @@ class SelfPlayTrainer:
                 self.losses.append(metrics["total_loss"])
 
             # Snapshot for self-play pool.
-            if (
-                cfg.snapshot_interval > 0
-                and self.total_episodes > 0
-                and self.total_episodes % cfg.snapshot_interval == 0
-            ):
-                self.agent.save_snapshot()
+            if cfg.snapshot_interval > 0:
+                for snapshot_ep in self._crossed_intervals(
+                    prev_snapshot_ep,
+                    self.total_episodes,
+                    cfg.snapshot_interval,
+                ):
+                    self.agent.save_snapshot()
+                    prev_snapshot_ep = snapshot_ep
 
             # Logging.
-            if self._crossed_interval(
-                prev_log_ep, self.total_episodes, cfg.log_interval,
-            ) or self.total_episodes >= cfg.max_episodes:
+            for log_ep in self._crossed_intervals(
+                prev_log_ep,
+                self.total_episodes,
+                cfg.log_interval,
+            ):
+                self._log_metrics(log_ep, start)
+                prev_log_ep = log_ep
+            if (
+                self.total_episodes >= cfg.max_episodes
+                and prev_log_ep < self.total_episodes
+            ):
                 self._log_metrics(self.total_episodes, start)
                 prev_log_ep = self.total_episodes
 
             # Checkpoint saving.
-            if self._crossed_interval(
-                prev_save_ep, self.total_episodes, cfg.save_interval,
+            for save_ep in self._crossed_intervals(
+                prev_save_ep,
+                self.total_episodes,
+                cfg.save_interval,
             ):
-                self._save_versioned_checkpoint(
-                    self.total_episodes,
-                )
-                prev_save_ep = self.total_episodes
+                self._save_versioned_checkpoint(save_ep)
+                prev_save_ep = save_ep
 
         # Final checkpoint.
         self._save_versioned_checkpoint(
@@ -365,6 +376,18 @@ class SelfPlayTrainer:
             prev_episode // interval
             < current_episode // interval
         )
+
+    @classmethod
+    def _crossed_intervals(
+        cls, prev_episode: int, current_episode: int, interval: int,
+    ) -> list[int]:
+        """Return all crossed interval boundaries in ascending order."""
+        if not cls._crossed_interval(
+            prev_episode, current_episode, interval,
+        ):
+            return []
+        first = ((prev_episode // interval) + 1) * interval
+        return list(range(first, current_episode + 1, interval))
 
     def _log_metrics(self, ep: int, start: float) -> None:
         elapsed = time.monotonic() - start
