@@ -95,6 +95,7 @@ class TestGetGame:
         data = resp.json()
         assert data["game_id"] == game_id
         assert data["status"] == "waiting"
+        assert data["host_snake_id"] is None
 
     @pytest.mark.asyncio
     async def test_get_not_found(self, client):
@@ -116,6 +117,10 @@ class TestJoinGame:
         assert data["snake_id"] == 0
         assert data["nickname"] == "alice"
         assert "token" in data
+
+        detail_resp = await client.get(f"/games/{game_id}")
+        assert detail_resp.status_code == 200
+        assert detail_resp.json()["host_snake_id"] == data["snake_id"]
 
     @pytest.mark.asyncio
     async def test_join_fills_lobby(self, client):
@@ -234,7 +239,9 @@ class TestLeaveGame:
         )
 
         host_token = j1.json()["token"]
+        host_snake_id = j1.json()["snake_id"]
         next_host_token = j2.json()["token"]
+        next_host_snake_id = j2.json()["snake_id"]
         non_host_token = j3.json()["token"]
 
         leave_resp = await client.post(
@@ -246,6 +253,10 @@ class TestLeaveGame:
         detail_data = detail.json()
         assert detail_data["player_count"] == 2
         assert {p["nickname"] for p in detail_data["players"]} == {"p2", "p3"}
+        assert host_snake_id not in {
+            p["snake_id"] for p in detail_data["players"]
+        }
+        assert detail_data["host_snake_id"] == next_host_snake_id
 
         denied = await client.post(
             f"/games/{game_id}/start",

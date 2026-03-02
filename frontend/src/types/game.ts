@@ -41,6 +41,7 @@ export interface GameDetail {
   max_players: number;
   tick_rate_ms: number;
   ai_count: number;
+  host_snake_id: number | null;
   players: PlayerInfo[];
   state?: GameState;
 }

@@ -66,6 +66,11 @@ async def get_game(game_id: str, request: Request) -> dict:
     game = manager.get_game(game_id)
     if game is None:
         raise HTTPException(status_code=404, detail="Game not found.")
+    host_slot = (
+        game.players.get(game.host_token)
+        if game.host_token is not None
+        else None
+    )
     result: dict = {
         "game_id": game.game_id,
         "status": game.status.value,
@@ -73,6 +78,7 @@ async def get_game(game_id: str, request: Request) -> dict:
         "max_players": game.max_players,
         "tick_rate_ms": game.tick_rate_ms,
         "ai_count": game.ai_count,
+        "host_snake_id": host_slot.snake_id if host_slot else None,
         "players": [
             {
                 "snake_id": s.snake_id,

@@ -3,22 +3,12 @@ import GameView from "./components/GameView";
 import Lobby from "./components/Lobby";
 import type { JoinResponse } from "./types/game";
 
-interface ActiveGame {
-  joinInfo: JoinResponse;
-  isHost: boolean;
-}
-
 export default function App() {
-  const [activeGame, setActiveGame] = useState<ActiveGame | null>(
-    null,
-  );
+  const [activeGame, setActiveGame] = useState<JoinResponse | null>(null);
 
-  const handleJoined = useCallback(
-    (joinInfo: JoinResponse, isHost: boolean) => {
-      setActiveGame({ joinInfo, isHost });
-    },
-    [],
-  );
+  const handleJoined = useCallback((joinInfo: JoinResponse) => {
+    setActiveGame(joinInfo);
+  }, []);
 
   const handleBackToLobby = useCallback(() => {
     setActiveGame(null);
@@ -27,8 +17,7 @@ export default function App() {
   if (activeGame) {
     return (
       <GameView
-        joinInfo={activeGame.joinInfo}
-        isHost={activeGame.isHost}
+        joinInfo={activeGame}
         onBackToLobby={handleBackToLobby}
       />
     );

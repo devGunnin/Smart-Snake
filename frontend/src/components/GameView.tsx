@@ -27,13 +27,11 @@ const STATUS_COLORS: Record<string, string> = {
 
 interface GameViewProps {
   joinInfo: JoinResponse;
-  isHost: boolean;
   onBackToLobby: () => void;
 }
 
 export default function GameView({
   joinInfo,
-  isHost,
   onBackToLobby,
 }: GameViewProps) {
   const [detail, setDetail] = useState<GameDetail | null>(null);
@@ -174,6 +172,7 @@ export default function GameView({
   // Waiting room.
   const players = detail?.players ?? [];
   const waiting = isWaiting;
+  const isHost = detail?.host_snake_id === joinInfo.snake_id;
 
   return (
     <div className="waiting-room">

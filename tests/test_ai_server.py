@@ -112,6 +112,7 @@ class TestGameDetailWithAi:
         assert len(ai_players) == 1
         assert "AI" in ai_players[0]["nickname"]
         assert "Hard" in ai_players[0]["nickname"]
+        assert data["host_snake_id"] is None
 
     @pytest.mark.asyncio
     async def test_human_joins_after_ai(self, client):
@@ -128,6 +129,10 @@ class TestGameDetailWithAi:
         data = join_resp.json()
         assert data["snake_id"] == 1
         assert data["nickname"] == "human"
+
+        detail_resp = await client.get(f"/games/{game_id}")
+        assert detail_resp.status_code == 200
+        assert detail_resp.json()["host_snake_id"] == data["snake_id"]
 
     @pytest.mark.asyncio
     async def test_lobby_full_with_ai_and_humans(self, client):

@@ -21,7 +21,7 @@ const DIFFICULTIES: DifficultyTier[] = [
 const POLL_INTERVAL = 3000;
 
 interface LobbyProps {
-  onJoined: (join: JoinResponse, isHost: boolean) => void;
+  onJoined: (join: JoinResponse) => void;
 }
 
 export default function Lobby({ onJoined }: LobbyProps) {
@@ -66,7 +66,7 @@ export default function Lobby({ onJoined }: LobbyProps) {
     setJoining(gameId);
     try {
       const res = await joinGame(gameId, nickname);
-      onJoined(res, false);
+      onJoined(res);
     } catch (err: unknown) {
       setError(
         err instanceof Error ? err.message : "Failed to join.",
@@ -92,7 +92,7 @@ export default function Lobby({ onJoined }: LobbyProps) {
     try {
       const game = await createGame(opts);
       const res = await joinGame(game.game_id, nickname);
-      onJoined(res, true);
+      onJoined(res);
     } catch (err: unknown) {
       setError(
         err instanceof Error ? err.message : "Failed to create game.",
@@ -109,7 +109,7 @@ export default function Lobby({ onJoined }: LobbyProps) {
     try {
       const game = await createGame(opts);
       const res = await joinGame(game.game_id, nickname);
-      onJoined(res, true);
+      onJoined(res);
     } catch (err: unknown) {
       setError(
         err instanceof Error
