@@ -40,6 +40,7 @@ _AI_DIFFICULTY_NOISE: dict[str, float] = {
 _ACTION_TO_DIRECTION = [
     Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT,
 ]
+_AI_CHECKPOINT_CANDIDATES = ("best_model.pth", "best_model.pt")
 
 
 @dataclass
@@ -337,12 +338,7 @@ class GameManager:
                 "Install with: pip install smart-snake[ai]"
             ) from exc
 
-        checkpoint = self._checkpoint_dir / "best_model.pt"
-        if not checkpoint.exists():
-            raise ValueError(
-                f"AI checkpoint not found at {checkpoint}. "
-                "Train a model first with: smart-snake-train train"
-            )
+        checkpoint = self._resolve_ai_checkpoint()
 
         for slot in game.players.values():
             if not slot.is_ai:
@@ -362,6 +358,31 @@ class GameManager:
                 slot.snake_id, diff, noise,
             )
 
+    def _resolve_ai_checkpoint(self) -> Path:
+        """Return the preferred AI checkpoint path for GUI opponents."""
+        env_checkpoint = os.environ.get("SMART_SNAKE_AI_CHECKPOINT")
+        if env_checkpoint:
+            checkpoint = Path(env_checkpoint)
+            if checkpoint.exists():
+                return checkpoint
+            raise ValueError(
+                f"AI checkpoint not found at {checkpoint}. "
+                "Set SMART_SNAKE_AI_CHECKPOINT to an existing file path."
+            )
+
+        for filename in _AI_CHECKPOINT_CANDIDATES:
+            checkpoint = self._checkpoint_dir / filename
+            if checkpoint.exists():
+                return checkpoint
+        candidates = ", ".join(
+            str(self._checkpoint_dir / filename)
+            for filename in _AI_CHECKPOINT_CANDIDATES
+        )
+        raise ValueError(
+            f"AI checkpoint not found. Checked: {candidates}. "
+            "Train a model first with: smart-snake-train train"
+        )
+
     def _set_ai_directions(self, game: GameInstance) -> None:
         """Compute and apply directions for all AI-controlled snakes."""
         if not game.ai_agents or game.engine is None:
@@ -372,7 +393,18 @@ class GameManager:
         for snake_id, agent in game.ai_agents.items():
             if not engine.snakes[snake_id].alive:
                 continue
-            obs = encode_multi(engine.grid, engine.snakes, snake_id)
+            state_encoding = getattr(agent, "state_encoding", "absolute")
+            if state_encoding not in {"absolute", "relative"}:
+                logger.warning(
+                    "Invalid state_encoding %r on AI agent for snake %d; "
+                    "falling back to absolute.",
+                    state_encoding,
+                    snake_id,
+                )
+                state_encoding = "absolute"
+            obs = encode_multi(
+                engine.grid, engine.snakes, snake_id, mode=state_encoding,
+            )
             action = agent.select_action(obs)
             engine.set_direction(snake_id, _ACTION_TO_DIRECTION[action])
 

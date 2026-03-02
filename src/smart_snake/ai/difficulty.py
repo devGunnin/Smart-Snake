@@ -117,6 +117,15 @@ class DifficultyAgent:
             weights_only=False,
         )
         cfg_dict = data.get("config", {})
+        state_encoding = cfg_dict.get("state_encoding", "absolute")
+        if state_encoding not in {"absolute", "relative"}:
+            logger.warning(
+                "Invalid checkpoint state_encoding=%r. Falling back to "
+                "'absolute'.",
+                state_encoding,
+            )
+            state_encoding = "absolute"
+        self.state_encoding = state_encoding
         config = _config_from_dict(cfg_dict)
         self._input_height = config.grid_height
         self._input_width = config.grid_width

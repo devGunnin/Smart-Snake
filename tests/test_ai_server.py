@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -218,6 +218,16 @@ class TestGameManagerAiDirect:
 
 
 class TestAiAgentLoading:
+    def test_resolve_ai_checkpoint_prefers_pth(self, tmp_path):
+        manager = GameManager(checkpoint_dir=str(tmp_path))
+        pt_path = tmp_path / "best_model.pt"
+        pth_path = tmp_path / "best_model.pth"
+        pt_path.write_bytes(b"pt")
+        pth_path.write_bytes(b"pth")
+
+        resolved = manager._resolve_ai_checkpoint()
+        assert resolved == pth_path
+
     def test_start_without_checkpoint_fails(self):
         manager = GameManager(checkpoint_dir="/nonexistent")
         game = manager.create_game(
@@ -268,6 +278,32 @@ class TestAiAgentLoading:
 
         manager._set_ai_directions(game)
         mock_agent.select_action.assert_not_called()
+
+    def test_set_ai_directions_uses_agent_state_encoding(self):
+        manager = GameManager()
+        game = manager.create_game(
+            player_count=2,
+            ai_opponents=[{"difficulty": "medium"}],
+        )
+        manager.join_game(game.game_id, "human")
+
+        from smart_snake.multiplayer import MultiplayerEngine
+
+        game.engine = MultiplayerEngine(game.config)
+        mock_agent = MagicMock()
+        mock_agent.state_encoding = "relative"
+        mock_agent.select_action.return_value = 0
+        game.ai_agents[0] = mock_agent
+
+        obs = np.zeros(
+            (8, game.engine.grid.height, game.engine.grid.width),
+            dtype=np.float32,
+        )
+        with patch("smart_snake.ai.state.encode_multi", return_value=obs) as encode_mock:
+            manager._set_ai_directions(game)
+
+        assert encode_mock.call_args.kwargs["mode"] == "relative"
+        mock_agent.select_action.assert_called_once_with(obs)
 
     def test_set_ai_directions_noop_without_agents(self):
         manager = GameManager()
