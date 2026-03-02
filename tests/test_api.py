@@ -95,6 +95,7 @@ class TestGetGame:
         data = resp.json()
         assert data["game_id"] == game_id
         assert data["status"] == "waiting"
+        assert data["host_snake_id"] is None
 
     @pytest.mark.asyncio
     async def test_get_not_found(self, client):
@@ -116,6 +117,10 @@ class TestJoinGame:
         assert data["snake_id"] == 0
         assert data["nickname"] == "alice"
         assert "token" in data
+
+        detail_resp = await client.get(f"/games/{game_id}")
+        assert detail_resp.status_code == 200
+        assert detail_resp.json()["host_snake_id"] == data["snake_id"]
 
     @pytest.mark.asyncio
     async def test_join_fills_lobby(self, client):
@@ -213,6 +218,123 @@ class TestStartGame:
             "/games/nonexistent/start", json={"token": "x"},
         )
         assert resp.status_code == 404
+
+
+class TestLeaveGame:
+    @pytest.mark.asyncio
+    async def test_leave_waiting_reassigns_host(self, client):
+        create_resp = await client.post(
+            "/games", json={"player_count": 3},
+        )
+        game_id = create_resp.json()["game_id"]
+
+        j1 = await client.post(
+            f"/games/{game_id}/join", json={"nickname": "p1"},
+        )
+        j2 = await client.post(
+            f"/games/{game_id}/join", json={"nickname": "p2"},
+        )
+        j3 = await client.post(
+            f"/games/{game_id}/join", json={"nickname": "p3"},
+        )
+
+        host_token = j1.json()["token"]
+        host_snake_id = j1.json()["snake_id"]
+        next_host_token = j2.json()["token"]
+        next_host_snake_id = j2.json()["snake_id"]
+        non_host_token = j3.json()["token"]
+
+        leave_resp = await client.post(
+            f"/games/{game_id}/leave", json={"token": host_token},
+        )
+        assert leave_resp.status_code == 200
+
+        detail = await client.get(f"/games/{game_id}")
+        detail_data = detail.json()
+        assert detail_data["player_count"] == 2
+        assert {p["nickname"] for p in detail_data["players"]} == {"p2", "p3"}
+        assert host_snake_id not in {
+            p["snake_id"] for p in detail_data["players"]
+        }
+        assert detail_data["host_snake_id"] == next_host_snake_id
+
+        denied = await client.post(
+            f"/games/{game_id}/start",
+            json={"token": non_host_token},
+        )
+        assert denied.status_code == 403
+
+        started = await client.post(
+            f"/games/{game_id}/start",
+            json={"token": next_host_token},
+        )
+        assert started.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_leave_reuses_open_snake_id(self, client):
+        create_resp = await client.post(
+            "/games", json={"player_count": 4},
+        )
+        game_id = create_resp.json()["game_id"]
+
+        j1 = await client.post(
+            f"/games/{game_id}/join", json={"nickname": "p1"},
+        )
+        j2 = await client.post(
+            f"/games/{game_id}/join", json={"nickname": "p2"},
+        )
+        await client.post(
+            f"/games/{game_id}/join", json={"nickname": "p3"},
+        )
+
+        assert j1.json()["snake_id"] == 0
+        assert j2.json()["snake_id"] == 1
+
+        leave_resp = await client.post(
+            f"/games/{game_id}/leave", json={"token": j2.json()["token"]},
+        )
+        assert leave_resp.status_code == 200
+
+        rejoin = await client.post(
+            f"/games/{game_id}/join", json={"nickname": "p4"},
+        )
+        assert rejoin.status_code == 201
+        assert rejoin.json()["snake_id"] == 1
+
+    @pytest.mark.asyncio
+    async def test_leave_non_waiting_game_conflict(self, client):
+        create_resp = await client.post(
+            "/games", json={"player_count": 2},
+        )
+        game_id = create_resp.json()["game_id"]
+
+        j1 = await client.post(
+            f"/games/{game_id}/join", json={"nickname": "p1"},
+        )
+        j2 = await client.post(
+            f"/games/{game_id}/join", json={"nickname": "p2"},
+        )
+        await client.post(
+            f"/games/{game_id}/start",
+            json={"token": j1.json()["token"]},
+        )
+
+        leave_resp = await client.post(
+            f"/games/{game_id}/leave", json={"token": j2.json()["token"]},
+        )
+        assert leave_resp.status_code == 409
+
+    @pytest.mark.asyncio
+    async def test_leave_bad_token_not_found(self, client):
+        create_resp = await client.post(
+            "/games", json={"player_count": 2},
+        )
+        game_id = create_resp.json()["game_id"]
+
+        leave_resp = await client.post(
+            f"/games/{game_id}/leave", json={"token": "bad-token"},
+        )
+        assert leave_resp.status_code == 404
 
 
 class TestGameStateAfterStart:

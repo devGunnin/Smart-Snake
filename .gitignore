@@ -15,3 +15,5 @@ htmlcov/
 venv/
 checkpoints/
 runs/
+frontend/node_modules/
+frontend/dist/

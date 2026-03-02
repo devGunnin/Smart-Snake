@@ -9,6 +9,7 @@ from smart_snake.server.models import (
     GameSummary,
     JoinRequest,
     JoinResponse,
+    LeaveRequest,
     StartRequest,
 )
 
@@ -24,6 +25,9 @@ async def create_game(body: CreateGameRequest, request: Request) -> GameSummary:
     """Create a new game lobby."""
     manager = _get_manager(request)
     client_ip = request.client.host if request.client else "unknown"
+    ai_opponents = [
+        {"difficulty": ai.difficulty} for ai in body.ai_opponents
+    ]
     try:
         game = manager.create_game(
             player_count=body.player_count,
@@ -35,6 +39,7 @@ async def create_game(body: CreateGameRequest, request: Request) -> GameSummary:
             dead_body_mode=body.dead_body_mode,
             tick_rate_ms=body.tick_rate_ms,
             client_ip=client_ip,
+            ai_opponents=ai_opponents,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -44,6 +49,7 @@ async def create_game(body: CreateGameRequest, request: Request) -> GameSummary:
         player_count=game.player_count,
         max_players=game.max_players,
         tick_rate_ms=game.tick_rate_ms,
+        ai_count=game.ai_count,
     )
 
 
@@ -60,17 +66,25 @@ async def get_game(game_id: str, request: Request) -> dict:
     game = manager.get_game(game_id)
     if game is None:
         raise HTTPException(status_code=404, detail="Game not found.")
+    host_slot = (
+        game.players.get(game.host_token)
+        if game.host_token is not None
+        else None
+    )
     result: dict = {
         "game_id": game.game_id,
         "status": game.status.value,
         "player_count": game.player_count,
         "max_players": game.max_players,
         "tick_rate_ms": game.tick_rate_ms,
+        "ai_count": game.ai_count,
+        "host_snake_id": host_slot.snake_id if host_slot else None,
         "players": [
             {
                 "snake_id": s.snake_id,
                 "nickname": s.nickname,
                 "connected": s.connected,
+                "is_ai": s.is_ai,
             }
             for s in game.players.values()
         ],
@@ -115,3 +129,18 @@ async def start_game(
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     return {"status": "started", "game_id": game_id}
+
+
+@router.post("/{game_id}/leave", status_code=200)
+async def leave_game(
+    game_id: str, body: LeaveRequest, request: Request,
+) -> dict:
+    """Leave a waiting game lobby."""
+    manager = _get_manager(request)
+    try:
+        await manager.leave_game(game_id, body.token)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"status": "left", "game_id": game_id}

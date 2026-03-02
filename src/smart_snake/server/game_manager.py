@@ -5,15 +5,19 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
 
 from starlette.websockets import WebSocket, WebSocketState
 
 from smart_snake.grid import WallMode
 from smart_snake.multiplayer import DeadBodyMode, MatchConfig, MultiplayerEngine
 from smart_snake.server.models import GameStatus, GameSummary
+from smart_snake.snake import Direction
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +26,20 @@ _RATE_LIMIT_WINDOW = 60.0  # seconds
 _RATE_LIMIT_MAX = 10
 _RATE_COMPACT_INTERVAL = 60.0  # seconds between stale-key sweeps
 _MAX_FINISHED_GAMES = 100
+
+_VALID_AI_DIFFICULTIES = frozenset({
+    "beginner", "easy", "medium", "hard", "impossible",
+})
+_AI_DIFFICULTY_NOISE: dict[str, float] = {
+    "beginner": 0.8,
+    "easy": 0.5,
+    "medium": 0.2,
+    "hard": 0.05,
+    "impossible": 0.0,
+}
+_ACTION_TO_DIRECTION = [
+    Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT,
+]
 
 
 @dataclass
@@ -33,6 +51,7 @@ class PlayerSlot:
     token: str
     websocket: WebSocket | None = None
     connected: bool = False
+    is_ai: bool = False
 
 
 @dataclass
@@ -51,6 +70,8 @@ class GameInstance:
     finished_at: float | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     _task: asyncio.Task | None = field(default=None, repr=False)
+    ai_agents: dict[int, Any] = field(default_factory=dict)
+    ai_config: list[dict[str, str]] = field(default_factory=list)
 
     @property
     def player_count(self) -> int:
@@ -60,17 +81,29 @@ class GameInstance:
     def max_players(self) -> int:
         return self.config.player_count
 
+    @property
+    def ai_count(self) -> int:
+        return sum(1 for s in self.players.values() if s.is_ai)
+
 
 class GameManager:
     """Central registry managing all game instances."""
 
-    def __init__(self, max_finished_games: int = _MAX_FINISHED_GAMES) -> None:
+    def __init__(
+        self,
+        max_finished_games: int = _MAX_FINISHED_GAMES,
+        checkpoint_dir: str | None = None,
+    ) -> None:
         if max_finished_games < 0:
             raise ValueError("max_finished_games must be >= 0.")
         self._games: dict[str, GameInstance] = {}
         self._rate_limits: dict[str, list[float]] = {}
         self._last_rate_compact: float = 0.0
         self._max_finished_games = max_finished_games
+        self._checkpoint_dir = Path(
+            checkpoint_dir
+            or os.environ.get("SMART_SNAKE_CHECKPOINT_DIR", "checkpoints")
+        )
 
     def _check_rate_limit(self, client_ip: str) -> bool:
         """Return True if the client is within rate limits."""
@@ -103,6 +136,23 @@ class GameManager:
     def _record_creation(self, client_ip: str) -> None:
         self._rate_limits.setdefault(client_ip, []).append(time.monotonic())
 
+    @staticmethod
+    def _select_host_token(game: GameInstance) -> str | None:
+        """Return the next host token from remaining human players."""
+        human_slots = [slot for slot in game.players.values() if not slot.is_ai]
+        if not human_slots:
+            return None
+        return min(human_slots, key=lambda slot: slot.snake_id).token
+
+    @staticmethod
+    def _next_snake_id(game: GameInstance) -> int:
+        """Return the smallest unoccupied snake id in this game."""
+        used = {slot.snake_id for slot in game.players.values()}
+        for snake_id in range(game.max_players):
+            if snake_id not in used:
+                return snake_id
+        raise ValueError("Game lobby is full.")
+
     def create_game(
         self,
         player_count: int = 2,
@@ -114,10 +164,24 @@ class GameManager:
         dead_body_mode: str = "remove",
         tick_rate_ms: int = 200,
         client_ip: str = "unknown",
+        ai_opponents: list[dict[str, str]] | None = None,
     ) -> GameInstance:
         """Create a new game lobby and return the instance."""
         if not self._check_rate_limit(client_ip):
             raise ValueError("Rate limit exceeded. Try again later.")
+
+        ai_opponents = ai_opponents or []
+        if len(ai_opponents) >= player_count:
+            raise ValueError(
+                "At least one human player slot is required."
+            )
+        for ai_cfg in ai_opponents:
+            diff = ai_cfg.get("difficulty", "medium")
+            if diff not in _VALID_AI_DIFFICULTIES:
+                raise ValueError(
+                    f"Invalid AI difficulty: {diff!r}. "
+                    f"Must be one of {sorted(_VALID_AI_DIFFICULTIES)}."
+                )
 
         wm = WallMode(wall_mode)
         dbm = DeadBodyMode(dead_body_mode)
@@ -136,10 +200,27 @@ class GameManager:
             game_id=game_id,
             config=config,
             tick_rate_ms=tick_rate_ms,
+            ai_config=ai_opponents,
         )
+
+        for i, ai_cfg in enumerate(ai_opponents):
+            diff = ai_cfg.get("difficulty", "medium")
+            snake_id = i
+            token = f"ai-{uuid.uuid4().hex}"
+            slot = PlayerSlot(
+                snake_id=snake_id,
+                nickname=f"AI ({diff.capitalize()})",
+                token=token,
+                is_ai=True,
+            )
+            instance.players[token] = slot
+
         self._games[game_id] = instance
         self._record_creation(client_ip)
-        logger.info("Game %s created (players=%d).", game_id, player_count)
+        logger.info(
+            "Game %s created (players=%d, ai=%d).",
+            game_id, player_count, len(ai_opponents),
+        )
         return instance
 
     def get_game(self, game_id: str) -> GameInstance | None:
@@ -158,6 +239,7 @@ class GameManager:
                     player_count=g.player_count,
                     max_players=g.max_players,
                     tick_rate_ms=g.tick_rate_ms,
+                    ai_count=g.ai_count,
                 )
             )
         return results
@@ -172,7 +254,7 @@ class GameManager:
         if game.player_count >= game.max_players:
             raise ValueError("Game lobby is full.")
 
-        snake_id = game.player_count
+        snake_id = self._next_snake_id(game)
         token = uuid.uuid4().hex
         slot = PlayerSlot(snake_id=snake_id, nickname=nickname, token=token)
         game.players[token] = slot
@@ -186,6 +268,42 @@ class GameManager:
         )
         return slot
 
+    async def leave_game(self, game_id: str, token: str) -> None:
+        """Remove a player from a waiting-game lobby."""
+        game = self._games.get(game_id)
+        if game is None:
+            raise KeyError(f"Game {game_id} not found.")
+        if game.status != GameStatus.WAITING:
+            raise ValueError("Can only leave waiting games.")
+
+        slot = game.players.get(token)
+        if slot is None or slot.is_ai:
+            raise KeyError("Player token not found.")
+
+        del game.players[token]
+        if token == game.host_token:
+            game.host_token = self._select_host_token(game)
+
+        ws = slot.websocket
+        slot.websocket = None
+        slot.connected = False
+        if ws is not None:
+            try:
+                if ws.client_state == WebSocketState.CONNECTED:
+                    await ws.close(code=1000, reason="Player left lobby.")
+            except Exception:
+                logger.warning(
+                    "Failed closing socket for player '%s' in game %s.",
+                    slot.nickname,
+                    game_id,
+                )
+
+        logger.info(
+            "Player '%s' left waiting game %s.",
+            slot.nickname,
+            game_id,
+        )
+
     def start_game(self, game_id: str, token: str) -> None:
         """Start the game tick loop. Only the host can start."""
         game = self._games.get(game_id)
@@ -198,12 +316,65 @@ class GameManager:
         if token != game.host_token:
             raise PermissionError("Only the host can start the game.")
 
+        if game.ai_config:
+            self._load_ai_agents(game)
+
         game.engine = MultiplayerEngine(game.config)
         game.status = GameStatus.ACTIVE
         game._task = asyncio.create_task(self._tick_loop(game))
         logger.info(
-            "Game %s started with %d players.", game_id, game.player_count,
+            "Game %s started with %d players (%d AI).",
+            game_id, game.player_count, game.ai_count,
         )
+
+    def _load_ai_agents(self, game: GameInstance) -> None:
+        """Load DifficultyAgent instances for AI slots."""
+        try:
+            from smart_snake.ai.difficulty import DifficultyAgent
+        except ImportError as exc:
+            raise ValueError(
+                "AI dependencies not installed. "
+                "Install with: pip install smart-snake[ai]"
+            ) from exc
+
+        checkpoint = self._checkpoint_dir / "best_model.pt"
+        if not checkpoint.exists():
+            raise ValueError(
+                f"AI checkpoint not found at {checkpoint}. "
+                "Train a model first with: smart-snake-train train"
+            )
+
+        for slot in game.players.values():
+            if not slot.is_ai:
+                continue
+            diff = "medium"
+            for ai_cfg in game.ai_config:
+                if ai_cfg.get("difficulty", "medium").capitalize() in slot.nickname:
+                    diff = ai_cfg.get("difficulty", "medium")
+                    break
+            noise = _AI_DIFFICULTY_NOISE.get(diff, 0.2)
+            agent = DifficultyAgent(
+                checkpoint, random_action_prob=noise, device="cpu",
+            )
+            game.ai_agents[slot.snake_id] = agent
+            logger.info(
+                "Loaded AI agent for snake %d (difficulty=%s, noise=%.2f).",
+                slot.snake_id, diff, noise,
+            )
+
+    def _set_ai_directions(self, game: GameInstance) -> None:
+        """Compute and apply directions for all AI-controlled snakes."""
+        if not game.ai_agents or game.engine is None:
+            return
+        from smart_snake.ai.state import encode_multi
+
+        engine = game.engine
+        for snake_id, agent in game.ai_agents.items():
+            if not engine.snakes[snake_id].alive:
+                continue
+            obs = encode_multi(engine.grid, engine.snakes, snake_id)
+            action = agent.select_action(obs)
+            engine.set_direction(snake_id, _ACTION_TO_DIRECTION[action])
 
     async def _tick_loop(self, game: GameInstance) -> None:
         """Run the game tick loop, broadcasting state each tick."""
@@ -213,6 +384,7 @@ class GameManager:
                 await asyncio.sleep(tick_interval)
                 async with game.lock:
                     assert game.engine is not None  # noqa: S101
+                    self._set_ai_directions(game)
                     state = game.engine.step()
                     if game.engine.game_over:
                         self._mark_game_finished(game)

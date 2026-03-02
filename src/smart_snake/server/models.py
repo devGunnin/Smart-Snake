@@ -15,6 +15,12 @@ class GameStatus(str, enum.Enum):
     FINISHED = "finished"
 
 
+class AiOpponentConfig(BaseModel):
+    """Configuration for a single AI opponent slot."""
+
+    difficulty: str = Field(default="medium")
+
+
 class CreateGameRequest(BaseModel):
     """Request body for POST /games."""
 
@@ -26,6 +32,7 @@ class CreateGameRequest(BaseModel):
     initial_snake_length: int = Field(default=3, ge=1)
     dead_body_mode: str = "remove"
     tick_rate_ms: int = Field(default=200, ge=50, le=2000)
+    ai_opponents: list[AiOpponentConfig] = Field(default_factory=list)
 
 
 class JoinRequest(BaseModel):
@@ -40,6 +47,12 @@ class StartRequest(BaseModel):
     token: str
 
 
+class LeaveRequest(BaseModel):
+    """Request body for POST /games/{game_id}/leave."""
+
+    token: str
+
+
 class GameSummary(BaseModel):
     """Compact game info for list endpoints."""
 
@@ -48,6 +61,7 @@ class GameSummary(BaseModel):
     player_count: int
     max_players: int
     tick_rate_ms: int
+    ai_count: int = 0
 
 
 class JoinResponse(BaseModel):

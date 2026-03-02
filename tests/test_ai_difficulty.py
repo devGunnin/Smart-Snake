@@ -137,6 +137,37 @@ class TestDifficultyAgent:
         assert len(actions) == 5
         assert all(0 <= a <= 3 for a in actions)
 
+    def test_select_action_with_mismatched_grid_shape(self, tmp_path):
+        ckpt_path = tmp_path / "model.pt"
+        _save_test_checkpoint(ckpt_path)
+
+        agent = DifficultyAgent(ckpt_path, device="cpu")
+        larger_state = np.random.randn(
+            NUM_CHANNELS, 20, 20,
+        ).astype(np.float32)
+        action = agent.select_action(larger_state)
+        assert 0 <= action <= 3
+
+    def test_select_actions_batch_with_mismatched_shapes(self, tmp_path):
+        ckpt_path = tmp_path / "model.pt"
+        _save_test_checkpoint(ckpt_path)
+
+        agent = DifficultyAgent(ckpt_path, device="cpu")
+        states = [
+            np.random.randn(
+                NUM_CHANNELS, 20, 20,
+            ).astype(np.float32),
+            np.random.randn(
+                NUM_CHANNELS, 15, 15,
+            ).astype(np.float32),
+            np.random.randn(
+                NUM_CHANNELS, 10, 10,
+            ).astype(np.float32),
+        ]
+        actions = agent.select_actions_batch(states)
+        assert len(actions) == 3
+        assert all(0 <= a <= 3 for a in actions)
+
     def test_inference_only_checkpoint(self, tmp_path):
         """Agent can load inference-only exports."""
         ckpt_path = tmp_path / "full.pt"

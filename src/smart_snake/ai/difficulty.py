@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.nn.functional as functional
 
 from smart_snake.ai.config import RewardConfig, TrainingConfig
 from smart_snake.ai.networks import DQNNetwork, DuelingDQNNetwork
@@ -116,6 +117,8 @@ class DifficultyAgent:
         )
         cfg_dict = data.get("config", {})
         config = _config_from_dict(cfg_dict)
+        self._input_height = config.grid_height
+        self._input_width = config.grid_width
 
         net_cls = DuelingDQNNetwork if config.dueling else DQNNetwork
         self._net = net_cls(
@@ -129,13 +132,35 @@ class DifficultyAgent:
         self._net.load_state_dict(data["online_state_dict"])
         self._net.eval()
 
+    def _prepare_state_tensor(self, state: np.ndarray) -> torch.Tensor:
+        """Convert a single state to a network-ready tensor."""
+        if state.ndim != 3:
+            raise ValueError(
+                "Expected state with shape (channels, height, width), "
+                f"got {state.shape}.",
+            )
+
+        tensor = torch.from_numpy(state).unsqueeze(0).to(
+            self._device,
+            dtype=torch.float32,
+        )
+        if (
+            state.shape[1] != self._input_height
+            or state.shape[2] != self._input_width
+        ):
+            tensor = functional.interpolate(
+                tensor,
+                size=(self._input_height, self._input_width),
+                mode="nearest",
+            )
+        return tensor
+
     def select_action(self, state: np.ndarray) -> int:
         """Select an action, with optional random perturbation."""
         if self._rng.random() < self._random_action_prob:
             return int(self._rng.integers(4))
         with torch.no_grad():
-            t = torch.from_numpy(state).unsqueeze(0).to(self._device)
-            q = self._net(t)
+            q = self._net(self._prepare_state_tensor(state))
             return int(q.argmax(dim=1).item())
 
     def select_actions_batch(
@@ -143,11 +168,16 @@ class DifficultyAgent:
     ) -> list[int]:
         """Select actions for a batch of states."""
         batch_size = len(states)
+        if batch_size == 0:
+            raise ValueError("states must not be empty.")
         random_mask = (
             self._rng.random(batch_size) < self._random_action_prob
         )
         with torch.no_grad():
-            t = torch.from_numpy(np.stack(states)).to(self._device)
+            t = torch.cat(
+                [self._prepare_state_tensor(state) for state in states],
+                dim=0,
+            )
             q = self._net(t)
             greedy = q.argmax(dim=1).cpu().numpy()
         random_actions = self._rng.integers(4, size=batch_size)

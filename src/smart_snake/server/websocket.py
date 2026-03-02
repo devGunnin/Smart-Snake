@@ -74,6 +74,11 @@ async def play(websocket: WebSocket, game_id: str, token: str = "") -> None:
 
     try:
         while True:
+            if token not in game.players:
+                if websocket.client_state == WebSocketState.CONNECTED:
+                    await websocket.close(code=4003, reason="Player left lobby.")
+                break
+
             if game.status == GameStatus.FINISHED:
                 if websocket.client_state == WebSocketState.CONNECTED:
                     await websocket.close(code=1000, reason="Game finished.")
