@@ -9,6 +9,7 @@ from smart_snake.server.models import (
     GameSummary,
     JoinRequest,
     JoinResponse,
+    LeaveRequest,
     StartRequest,
 )
 
@@ -122,3 +123,18 @@ async def start_game(
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     return {"status": "started", "game_id": game_id}
+
+
+@router.post("/{game_id}/leave", status_code=200)
+async def leave_game(
+    game_id: str, body: LeaveRequest, request: Request,
+) -> dict:
+    """Leave a waiting game lobby."""
+    manager = _get_manager(request)
+    try:
+        await manager.leave_game(game_id, body.token)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"status": "left", "game_id": game_id}

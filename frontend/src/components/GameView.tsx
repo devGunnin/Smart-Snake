@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getGame, playerWsUrl, startGame } from "../api/client";
+import { getGame, leaveGame, playerWsUrl, startGame } from "../api/client";
 import { useKeyboard } from "../hooks/useKeyboard";
 import { useWebSocket } from "../hooks/useWebSocket";
 import type {
@@ -39,6 +39,8 @@ export default function GameView({
   const [detail, setDetail] = useState<GameDetail | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [leaving, setLeaving] = useState(false);
+  const isWaiting = !detail || detail.status === "waiting";
 
   const wsUrl = useMemo(
     () => playerWsUrl(joinInfo.game_id, joinInfo.token),
@@ -101,6 +103,26 @@ export default function GameView({
     }
   }, [joinInfo]);
 
+  const handleLeave = async () => {
+    if (!isWaiting) {
+      onBackToLobby();
+      return;
+    }
+
+    setError(null);
+    setLeaving(true);
+    try {
+      await leaveGame(joinInfo.game_id, joinInfo.token);
+      onBackToLobby();
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : "Failed to leave game.",
+      );
+    } finally {
+      setLeaving(false);
+    }
+  };
+
   // Game over state.
   if (gameState?.game_over) {
     return (
@@ -151,7 +173,7 @@ export default function GameView({
 
   // Waiting room.
   const players = detail?.players ?? [];
-  const waiting = !detail || detail.status === "waiting";
+  const waiting = isWaiting;
 
   return (
     <div className="waiting-room">
@@ -226,9 +248,12 @@ export default function GameView({
 
       <button
         className="btn btn-ghost"
-        onClick={onBackToLobby}
+        onClick={() => {
+          void handleLeave();
+        }}
+        disabled={leaving}
       >
-        Leave
+        {leaving ? "Leaving..." : "Leave"}
       </button>
     </div>
   );

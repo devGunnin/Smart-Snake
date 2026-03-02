@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -194,6 +195,21 @@ class TestGameManagerAiDirect:
         slot = manager.join_game(game.game_id, "human")
         assert game.host_token == slot.token
         assert not slot.is_ai
+
+    def test_last_human_leave_clears_host(self):
+        manager = GameManager()
+        game = manager.create_game(
+            player_count=2,
+            ai_opponents=[{"difficulty": "medium"}],
+        )
+        slot = manager.join_game(game.game_id, "human")
+        assert game.host_token == slot.token
+
+        asyncio.run(manager.leave_game(game.game_id, slot.token))
+        assert game.host_token is None
+
+        rejoin = manager.join_game(game.game_id, "new-human")
+        assert game.host_token == rejoin.token
 
 
 class TestAiAgentLoading:

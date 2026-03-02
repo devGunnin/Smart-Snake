@@ -62,6 +62,16 @@ export function startGame(
   });
 }
 
+export function leaveGame(
+  gameId: string,
+  token: string,
+): Promise<{ status: string; game_id: string }> {
+  return request(`/games/${gameId}/leave`, {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+}
+
 /** Build the WebSocket URL for a player connection. */
 export function playerWsUrl(
   gameId: string,

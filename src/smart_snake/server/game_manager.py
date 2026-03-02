@@ -136,6 +136,23 @@ class GameManager:
     def _record_creation(self, client_ip: str) -> None:
         self._rate_limits.setdefault(client_ip, []).append(time.monotonic())
 
+    @staticmethod
+    def _select_host_token(game: GameInstance) -> str | None:
+        """Return the next host token from remaining human players."""
+        human_slots = [slot for slot in game.players.values() if not slot.is_ai]
+        if not human_slots:
+            return None
+        return min(human_slots, key=lambda slot: slot.snake_id).token
+
+    @staticmethod
+    def _next_snake_id(game: GameInstance) -> int:
+        """Return the smallest unoccupied snake id in this game."""
+        used = {slot.snake_id for slot in game.players.values()}
+        for snake_id in range(game.max_players):
+            if snake_id not in used:
+                return snake_id
+        raise ValueError("Game lobby is full.")
+
     def create_game(
         self,
         player_count: int = 2,
@@ -237,7 +254,7 @@ class GameManager:
         if game.player_count >= game.max_players:
             raise ValueError("Game lobby is full.")
 
-        snake_id = game.player_count
+        snake_id = self._next_snake_id(game)
         token = uuid.uuid4().hex
         slot = PlayerSlot(snake_id=snake_id, nickname=nickname, token=token)
         game.players[token] = slot
@@ -250,6 +267,42 @@ class GameManager:
             nickname, game_id, snake_id,
         )
         return slot
+
+    async def leave_game(self, game_id: str, token: str) -> None:
+        """Remove a player from a waiting-game lobby."""
+        game = self._games.get(game_id)
+        if game is None:
+            raise KeyError(f"Game {game_id} not found.")
+        if game.status != GameStatus.WAITING:
+            raise ValueError("Can only leave waiting games.")
+
+        slot = game.players.get(token)
+        if slot is None or slot.is_ai:
+            raise KeyError("Player token not found.")
+
+        del game.players[token]
+        if token == game.host_token:
+            game.host_token = self._select_host_token(game)
+
+        ws = slot.websocket
+        slot.websocket = None
+        slot.connected = False
+        if ws is not None:
+            try:
+                if ws.client_state == WebSocketState.CONNECTED:
+                    await ws.close(code=1000, reason="Player left lobby.")
+            except Exception:
+                logger.warning(
+                    "Failed closing socket for player '%s' in game %s.",
+                    slot.nickname,
+                    game_id,
+                )
+
+        logger.info(
+            "Player '%s' left waiting game %s.",
+            slot.nickname,
+            game_id,
+        )
 
     def start_game(self, game_id: str, token: str) -> None:
         """Start the game tick loop. Only the host can start."""

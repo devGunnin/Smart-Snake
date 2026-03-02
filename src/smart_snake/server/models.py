@@ -47,6 +47,12 @@ class StartRequest(BaseModel):
     token: str
 
 
+class LeaveRequest(BaseModel):
+    """Request body for POST /games/{game_id}/leave."""
+
+    token: str
+
+
 class GameSummary(BaseModel):
     """Compact game info for list endpoints."""
 
