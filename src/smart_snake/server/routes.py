@@ -24,6 +24,9 @@ async def create_game(body: CreateGameRequest, request: Request) -> GameSummary:
     """Create a new game lobby."""
     manager = _get_manager(request)
     client_ip = request.client.host if request.client else "unknown"
+    ai_opponents = [
+        {"difficulty": ai.difficulty} for ai in body.ai_opponents
+    ]
     try:
         game = manager.create_game(
             player_count=body.player_count,
@@ -35,6 +38,7 @@ async def create_game(body: CreateGameRequest, request: Request) -> GameSummary:
             dead_body_mode=body.dead_body_mode,
             tick_rate_ms=body.tick_rate_ms,
             client_ip=client_ip,
+            ai_opponents=ai_opponents,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -44,6 +48,7 @@ async def create_game(body: CreateGameRequest, request: Request) -> GameSummary:
         player_count=game.player_count,
         max_players=game.max_players,
         tick_rate_ms=game.tick_rate_ms,
+        ai_count=game.ai_count,
     )
 
 
@@ -66,11 +71,13 @@ async def get_game(game_id: str, request: Request) -> dict:
         "player_count": game.player_count,
         "max_players": game.max_players,
         "tick_rate_ms": game.tick_rate_ms,
+        "ai_count": game.ai_count,
         "players": [
             {
                 "snake_id": s.snake_id,
                 "nickname": s.nickname,
                 "connected": s.connected,
+                "is_ai": s.is_ai,
             }
             for s in game.players.values()
         ],
