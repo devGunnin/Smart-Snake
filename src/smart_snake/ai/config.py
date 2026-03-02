@@ -1,4 +1,4 @@
-"""Hyperparameter configuration for DQN training."""
+"""Hyperparameter configuration for MAPPO training."""
 
 from __future__ import annotations
 
@@ -43,33 +43,27 @@ class TrainingConfig:
     state_encoding: StateEncodingMode = "relative"
 
     # Network
-    dueling: bool = True
-    double_dqn: bool = True
     conv_channels: tuple[int, ...] = (32, 64, 64)
     fc_hidden: int = 256
 
     # Optimiser
     learning_rate: float = 3e-4
     gamma: float = 0.99
-    batch_size: int = 128
     max_grad_norm: float = 10.0
 
-    # Replay buffer
-    buffer_size: int = 500_000
-    min_buffer_size: int = 5_000
-    prioritized_replay: bool = True
-    priority_alpha: float = 0.6
-    priority_beta_start: float = 0.4
-    priority_beta_end: float = 1.0
-    priority_beta_steps: int = 100_000
+    # PPO
+    clip_ratio: float = 0.2
+    gae_lambda: float = 0.95
+    entropy_coeff: float = 0.01
+    value_loss_coeff: float = 0.5
+    ppo_epochs: int = 4
+    num_minibatches: int = 4
+    rollout_steps: int = 128
 
-    # Exploration
-    epsilon_start: float = 1.0
-    epsilon_end: float = 0.01
-    epsilon_decay_steps: int = 200_000
-
-    # Target network
-    target_update_freq: int = 500
+    # Self-play
+    snapshot_interval: int = 50
+    snapshot_pool_size: int = 10
+    latest_vs_latest_prob: float = 0.8
 
     # Training loop
     max_episodes: int = 50_000
@@ -97,10 +91,23 @@ class TrainingConfig:
             raise ValueError(
                 f"num_envs must be at least 1, got {self.num_envs}.",
             )
-        if self.target_update_freq < 1:
+        if self.clip_ratio <= 0:
             raise ValueError(
-                "target_update_freq must be at least 1, "
-                f"got {self.target_update_freq}.",
+                f"clip_ratio must be positive, got {self.clip_ratio}.",
+            )
+        if self.ppo_epochs < 1:
+            raise ValueError(
+                f"ppo_epochs must be at least 1, got {self.ppo_epochs}.",
+            )
+        if self.num_minibatches < 1:
+            raise ValueError(
+                "num_minibatches must be at least 1, "
+                f"got {self.num_minibatches}.",
+            )
+        if self.rollout_steps < 1:
+            raise ValueError(
+                "rollout_steps must be at least 1, "
+                f"got {self.rollout_steps}.",
             )
 
     def to_dict(self) -> dict:

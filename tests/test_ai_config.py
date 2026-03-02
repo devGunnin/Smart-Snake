@@ -30,18 +30,20 @@ class TestTrainingConfig:
         cfg = TrainingConfig()
         assert cfg.grid_width == 20
         assert cfg.player_count == 2
-        assert cfg.dueling is True
-        assert cfg.double_dqn is True
         assert cfg.state_encoding == "relative"
         assert cfg.num_envs == 4
         assert cfg.learning_rate == 3e-4
-        assert cfg.batch_size == 128
-        assert cfg.buffer_size == 500_000
-        assert cfg.min_buffer_size == 5_000
-        assert cfg.epsilon_decay_steps == 200_000
-        assert cfg.target_update_freq == 500
+        assert cfg.clip_ratio == 0.2
+        assert cfg.gae_lambda == 0.95
+        assert cfg.entropy_coeff == 0.01
+        assert cfg.ppo_epochs == 4
+        assert cfg.num_minibatches == 4
+        assert cfg.rollout_steps == 128
         assert cfg.max_episodes == 50_000
         assert cfg.max_steps_per_episode == 1_000
+        assert cfg.snapshot_interval == 50
+        assert cfg.snapshot_pool_size == 10
+        assert cfg.latest_vs_latest_prob == 0.8
 
     def test_to_dict(self):
         cfg = TrainingConfig()
@@ -52,7 +54,7 @@ class TestTrainingConfig:
 
     def test_save_and_load(self, tmp_path):
         cfg = TrainingConfig(
-            grid_width=15, epsilon_start=0.5,
+            grid_width=15, clip_ratio=0.3,
             reward=RewardConfig(apple=3.0),
         )
         path = tmp_path / "config.json"
@@ -61,7 +63,7 @@ class TestTrainingConfig:
 
         loaded = TrainingConfig.load(path)
         assert loaded.grid_width == 15
-        assert loaded.epsilon_start == 0.5
+        assert loaded.clip_ratio == 0.3
         assert loaded.reward.apple == 3.0
         assert loaded.state_encoding == "relative"
 
@@ -85,15 +87,37 @@ class TestTrainingConfig:
         assert loaded.state_encoding == "relative"
 
     def test_invalid_state_encoding_rejected(self):
-        with pytest.raises(ValueError, match="state_encoding must be either"):
+        with pytest.raises(
+            ValueError, match="state_encoding must be either",
+        ):
             TrainingConfig(state_encoding="diagonal")  # type: ignore[arg-type]
 
     def test_invalid_num_envs_rejected(self):
-        with pytest.raises(ValueError, match="num_envs must be at least 1"):
+        with pytest.raises(
+            ValueError, match="num_envs must be at least 1",
+        ):
             TrainingConfig(num_envs=0)
 
-    def test_invalid_target_update_freq_rejected(self):
+    def test_invalid_clip_ratio_rejected(self):
         with pytest.raises(
-            ValueError, match="target_update_freq must be at least 1",
+            ValueError, match="clip_ratio must be positive",
         ):
-            TrainingConfig(target_update_freq=0)
+            TrainingConfig(clip_ratio=0)
+
+    def test_invalid_ppo_epochs_rejected(self):
+        with pytest.raises(
+            ValueError, match="ppo_epochs must be at least 1",
+        ):
+            TrainingConfig(ppo_epochs=0)
+
+    def test_invalid_num_minibatches_rejected(self):
+        with pytest.raises(
+            ValueError, match="num_minibatches must be at least 1",
+        ):
+            TrainingConfig(num_minibatches=0)
+
+    def test_invalid_rollout_steps_rejected(self):
+        with pytest.raises(
+            ValueError, match="rollout_steps must be at least 1",
+        ):
+            TrainingConfig(rollout_steps=0)

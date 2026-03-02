@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from smart_snake.ai.agent import DQNAgent
+from smart_snake.ai.agent import MAPPOAgent
 from smart_snake.ai.config import TrainingConfig
 from smart_snake.ai.difficulty import (
     ALL_TIERS,
@@ -24,7 +24,7 @@ def _save_test_checkpoint(path, config=None):
         grid_width=10, grid_height=10,
         conv_channels=(8,), fc_hidden=16,
     )
-    agent = DQNAgent(cfg, device="cpu")
+    agent = MAPPOAgent(cfg, device="cpu")
     agent.save(path)
     return cfg
 
@@ -137,7 +137,9 @@ class TestDifficultyAgent:
         assert len(actions) == 5
         assert all(0 <= a <= 3 for a in actions)
 
-    def test_select_action_with_mismatched_grid_shape(self, tmp_path):
+    def test_select_action_with_mismatched_grid_shape(
+        self, tmp_path,
+    ):
         ckpt_path = tmp_path / "model.pt"
         _save_test_checkpoint(ckpt_path)
 
@@ -148,7 +150,9 @@ class TestDifficultyAgent:
         action = agent.select_action(larger_state)
         assert 0 <= action <= 3
 
-    def test_select_actions_batch_with_mismatched_shapes(self, tmp_path):
+    def test_select_actions_batch_with_mismatched_shapes(
+        self, tmp_path,
+    ):
         ckpt_path = tmp_path / "model.pt"
         _save_test_checkpoint(ckpt_path)
 
@@ -182,6 +186,21 @@ class TestDifficultyAgent:
         ).astype(np.float32)
         action = agent.select_action(state)
         assert 0 <= action <= 3
+
+    def test_select_action_with_mask(self, tmp_path):
+        ckpt_path = tmp_path / "model.pt"
+        _save_test_checkpoint(ckpt_path)
+
+        agent = DifficultyAgent(ckpt_path, device="cpu")
+        state = np.random.randn(
+            NUM_CHANNELS, 10, 10,
+        ).astype(np.float32)
+        mask = np.array([False, False, True, True])
+        actions = set()
+        for _ in range(30):
+            a = agent.select_action(state, action_mask=mask)
+            actions.add(a)
+        assert all(a in {2, 3} for a in actions)
 
 
 class TestLoadTierAgent:

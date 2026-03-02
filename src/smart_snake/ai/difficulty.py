@@ -13,7 +13,7 @@ import torch
 import torch.nn.functional as functional
 
 from smart_snake.ai.config import RewardConfig, TrainingConfig
-from smart_snake.ai.networks import DQNNetwork, DuelingDQNNetwork
+from smart_snake.ai.networks import ActorCriticNetwork
 from smart_snake.ai.state import NUM_CHANNELS
 
 logger = logging.getLogger(__name__)
@@ -93,7 +93,8 @@ class DifficultyAgent:
     """Inference-only agent loaded from a tier checkpoint.
 
     Optionally injects random actions at a configurable rate to
-    lower effective skill for easier tiers.
+    lower effective skill for easier tiers.  Uses the actor head
+    of the MAPPO ``ActorCriticNetwork`` for action selection.
     """
 
     def __init__(
@@ -120,8 +121,7 @@ class DifficultyAgent:
         self._input_height = config.grid_height
         self._input_width = config.grid_width
 
-        net_cls = DuelingDQNNetwork if config.dueling else DQNNetwork
-        self._net = net_cls(
+        self._net = ActorCriticNetwork(
             in_channels=NUM_CHANNELS,
             height=config.grid_height,
             width=config.grid_width,
@@ -129,7 +129,7 @@ class DifficultyAgent:
             conv_channels=config.conv_channels,
             fc_hidden=config.fc_hidden,
         ).to(self._device)
-        self._net.load_state_dict(data["online_state_dict"])
+        self._net.load_state_dict(data["actor_state_dict"])
         self._net.eval()
 
     def _prepare_state_tensor(self, state: np.ndarray) -> torch.Tensor:
@@ -155,16 +155,31 @@ class DifficultyAgent:
             )
         return tensor
 
-    def select_action(self, state: np.ndarray) -> int:
+    def select_action(
+        self,
+        state: np.ndarray,
+        action_mask: np.ndarray | None = None,
+    ) -> int:
         """Select an action, with optional random perturbation."""
         if self._rng.random() < self._random_action_prob:
+            if action_mask is not None:
+                valid = np.where(action_mask)[0]
+                if len(valid) > 0:
+                    return int(self._rng.choice(valid))
             return int(self._rng.integers(4))
         with torch.no_grad():
-            q = self._net(self._prepare_state_tensor(state))
-            return int(q.argmax(dim=1).item())
+            t = self._prepare_state_tensor(state)
+            mask_t = None
+            if action_mask is not None:
+                mask_t = torch.from_numpy(action_mask).unsqueeze(0).to(
+                    self._device, dtype=torch.bool,
+                )
+            logits, _ = self._net(t, action_mask=mask_t)
+            return int(logits.argmax(dim=1).item())
 
     def select_actions_batch(
         self, states: list[np.ndarray],
+        action_masks: list[np.ndarray] | None = None,
     ) -> list[int]:
         """Select actions for a batch of states."""
         batch_size = len(states)
@@ -175,11 +190,16 @@ class DifficultyAgent:
         )
         with torch.no_grad():
             t = torch.cat(
-                [self._prepare_state_tensor(state) for state in states],
+                [self._prepare_state_tensor(s) for s in states],
                 dim=0,
             )
-            q = self._net(t)
-            greedy = q.argmax(dim=1).cpu().numpy()
+            mask_t = None
+            if action_masks is not None:
+                mask_t = torch.from_numpy(
+                    np.stack(action_masks),
+                ).to(self._device, dtype=torch.bool)
+            logits, _ = self._net(t, action_mask=mask_t)
+            greedy = logits.argmax(dim=1).cpu().numpy()
         random_actions = self._rng.integers(4, size=batch_size)
         actions = np.where(random_mask, random_actions, greedy)
         return actions.tolist()

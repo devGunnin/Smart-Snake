@@ -175,7 +175,7 @@ class ModelManager:
         """Export a checkpoint stripped to inference-only weights.
 
         Removes optimizer state and step count, keeping only the
-        online network weights and config.
+        actor network weights and config.
         """
         data = torch.load(
             Path(checkpoint_path),
@@ -183,7 +183,7 @@ class ModelManager:
             weights_only=False,
         )
         inference_data = {
-            "online_state_dict": data["online_state_dict"],
+            "actor_state_dict": data["actor_state_dict"],
             "config": data.get("config", {}),
         }
         out = Path(output_path)

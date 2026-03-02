@@ -12,8 +12,7 @@ from smart_snake.ai.model_manager import CheckpointMeta, ModelManager
 def _dummy_state_dict() -> dict:
     """Create a minimal checkpoint dict for testing."""
     return {
-        "online_state_dict": {"layer.weight": torch.randn(4, 4)},
-        "target_state_dict": {"layer.weight": torch.randn(4, 4)},
+        "actor_state_dict": {"layer.weight": torch.randn(4, 4)},
         "optimiser_state_dict": {},
         "step_count": 100,
         "config": TrainingConfig(
@@ -95,7 +94,7 @@ class TestModelManager:
             win_rate=0.5, mean_reward=1.0, config=config,
         )
         loaded = mgr.load_checkpoint()
-        assert "online_state_dict" in loaded
+        assert "actor_state_dict" in loaded
 
     def test_load_checkpoint_by_version(self, tmp_path):
         mgr = ModelManager(tmp_path / "ckpts")
@@ -134,7 +133,7 @@ class TestModelManager:
             win_rate=0.5, mean_reward=1.0, config=config,
         )
         loaded = mgr.load_best()
-        assert "online_state_dict" in loaded
+        assert "actor_state_dict" in loaded
 
     def test_load_best_not_found(self, tmp_path):
         mgr = ModelManager(tmp_path / "ckpts")
@@ -181,10 +180,9 @@ class TestModelManager:
         assert out.exists()
 
         loaded = torch.load(out, weights_only=False)
-        assert "online_state_dict" in loaded
+        assert "actor_state_dict" in loaded
         assert "config" in loaded
         assert "optimiser_state_dict" not in loaded
-        assert "target_state_dict" not in loaded
 
     def test_metadata_json_is_valid(self, tmp_path):
         mgr = ModelManager(tmp_path / "ckpts")
