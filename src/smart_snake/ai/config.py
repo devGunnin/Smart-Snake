@@ -95,6 +95,11 @@ class TrainingConfig:
             raise ValueError(
                 f"num_envs must be at least 1, got {self.num_envs}.",
             )
+        if self.target_update_freq < 1:
+            raise ValueError(
+                "target_update_freq must be at least 1, "
+                f"got {self.target_update_freq}.",
+            )
 
     def to_dict(self) -> dict:
         """Serialize to a plain dict (tuples become lists)."""

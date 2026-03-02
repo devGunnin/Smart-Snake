@@ -60,7 +60,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Path to checkpoint to resume from.",
     )
     train_p.add_argument(
-        "--target-update-freq", type=int, default=None,
+        "--target-update-freq", type=_positive_int, default=None,
     )
     train_p.add_argument(
         "--max-steps-per-episode", type=int, default=None,

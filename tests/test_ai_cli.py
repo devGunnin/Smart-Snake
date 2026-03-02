@@ -112,6 +112,10 @@ class TestCLITrain:
         with pytest.raises(SystemExit, match="2"):
             main(["train", "--num-envs", "0"])
 
+    def test_train_target_update_freq_must_be_positive(self):
+        with pytest.raises(SystemExit, match="2"):
+            main(["train", "--target-update-freq", "0"])
+
 
 class TestCLIBenchmark:
     def test_benchmark_runs(self, capsys):

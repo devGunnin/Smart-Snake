@@ -85,3 +85,9 @@ class TestTrainingConfig:
     def test_invalid_num_envs_rejected(self):
         with pytest.raises(ValueError, match="num_envs must be at least 1"):
             TrainingConfig(num_envs=0)
+
+    def test_invalid_target_update_freq_rejected(self):
+        with pytest.raises(
+            ValueError, match="target_update_freq must be at least 1",
+        ):
+            TrainingConfig(target_update_freq=0)
