@@ -1,0 +1,14 @@
+services:
+  smart-snake:
+    build: .
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      - SMART_SNAKE_SERVE_FRONTEND=1
+      - SMART_SNAKE_CHECKPOINT_DIR=/app/checkpoints
+    volumes:
+      - checkpoints:/app/checkpoints
+    restart: unless-stopped
+
+volumes:
+  checkpoints:
