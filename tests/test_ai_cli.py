@@ -33,6 +33,28 @@ class TestCLIParser:
         assert args.num_envs == 4
         assert args.device == "cpu"
 
+    def test_train_reward_flags(self):
+        parser = _build_parser()
+        args = parser.parse_args([
+            "train",
+            "--reward-apple", "5.0",
+            "--reward-death", "-5.0",
+            "--reward-step-penalty", "-0.05",
+        ])
+        assert args.reward_apple == 5.0
+        assert args.reward_death == -5.0
+        assert args.reward_step_penalty == -0.05
+
+    def test_train_extra_flags(self):
+        parser = _build_parser()
+        args = parser.parse_args([
+            "train",
+            "--target-update-freq", "200",
+            "--max-steps-per-episode", "300",
+        ])
+        assert args.target_update_freq == 200
+        assert args.max_steps_per_episode == 300
+
     def test_benchmark_defaults(self):
         parser = _build_parser()
         args = parser.parse_args(["benchmark"])
@@ -58,6 +80,7 @@ class TestCLITrain:
             "--episodes", "2",
             "--grid-width", "10",
             "--grid-height", "10",
+            "--num-envs", "1",
             "--save-interval", "100",
             "--log-interval", "1",
             "--checkpoint-dir", ckpt_dir,
@@ -66,9 +89,32 @@ class TestCLITrain:
         ])
         assert result == 0
 
+    def test_train_with_reward_overrides(self, tmp_path):
+        ckpt_dir = str(tmp_path / "ckpts")
+        log_dir = str(tmp_path / "logs")
+        result = main([
+            "train",
+            "--episodes", "2",
+            "--grid-width", "10",
+            "--grid-height", "10",
+            "--num-envs", "1",
+            "--save-interval", "100",
+            "--log-interval", "1",
+            "--checkpoint-dir", ckpt_dir,
+            "--log-dir", log_dir,
+            "--device", "cpu",
+            "--reward-apple", "5.0",
+            "--reward-death", "-5.0",
+        ])
+        assert result == 0
+
     def test_train_num_envs_must_be_positive(self):
         with pytest.raises(SystemExit, match="2"):
             main(["train", "--num-envs", "0"])
+
+    def test_train_target_update_freq_must_be_positive(self):
+        with pytest.raises(SystemExit, match="2"):
+            main(["train", "--target-update-freq", "0"])
 
 
 class TestCLIBenchmark:

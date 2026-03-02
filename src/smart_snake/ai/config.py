@@ -17,9 +17,9 @@ StateEncodingMode = Literal["absolute", "relative"]
 class RewardConfig:
     """Configurable reward weights for the snake environment."""
 
-    apple: float = 1.0
-    death: float = -1.0
-    step_penalty: float = -0.01
+    apple: float = 3.0
+    death: float = -3.0
+    step_penalty: float = -0.02
     survival_bonus: float = 0.0
     kill_opponent: float = 0.5
 
@@ -47,14 +47,14 @@ class TrainingConfig:
     fc_hidden: int = 256
 
     # Optimiser
-    learning_rate: float = 1e-4
+    learning_rate: float = 3e-4
     gamma: float = 0.99
-    batch_size: int = 64
+    batch_size: int = 128
     max_grad_norm: float = 10.0
 
     # Replay buffer
     buffer_size: int = 100_000
-    min_buffer_size: int = 1_000
+    min_buffer_size: int = 500
     prioritized_replay: bool = True
     priority_alpha: float = 0.6
     priority_beta_start: float = 0.4
@@ -64,19 +64,19 @@ class TrainingConfig:
     # Exploration
     epsilon_start: float = 1.0
     epsilon_end: float = 0.01
-    epsilon_decay_steps: int = 100_000
+    epsilon_decay_steps: int = 50_000
 
     # Target network
-    target_update_freq: int = 1_000
+    target_update_freq: int = 500
 
     # Training loop
     max_episodes: int = 10_000
-    max_steps_per_episode: int = 1_000
+    max_steps_per_episode: int = 500
     log_interval: int = 100
     save_interval: int = 1_000
 
     # Parallel environments
-    num_envs: int = 1
+    num_envs: int = 4
 
     # Rewards
     reward: RewardConfig = field(default_factory=RewardConfig)
@@ -94,6 +94,11 @@ class TrainingConfig:
         if self.num_envs < 1:
             raise ValueError(
                 f"num_envs must be at least 1, got {self.num_envs}.",
+            )
+        if self.target_update_freq < 1:
+            raise ValueError(
+                "target_update_freq must be at least 1, "
+                f"got {self.target_update_freq}.",
             )
 
     def to_dict(self) -> dict:

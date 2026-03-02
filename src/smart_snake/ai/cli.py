@@ -59,10 +59,29 @@ def _build_parser() -> argparse.ArgumentParser:
         "--resume", type=str, default=None,
         help="Path to checkpoint to resume from.",
     )
+    train_p.add_argument(
+        "--target-update-freq", type=_positive_int, default=None,
+    )
+    train_p.add_argument(
+        "--max-steps-per-episode", type=int, default=None,
+    )
     train_p.add_argument("--device", type=str, default=None)
     train_p.add_argument(
         "--state-encoding", type=str, default=None,
         choices=["absolute", "relative"],
+    )
+    # Reward overrides.
+    train_p.add_argument(
+        "--reward-apple", type=float, default=None,
+        help="Reward for eating an apple.",
+    )
+    train_p.add_argument(
+        "--reward-death", type=float, default=None,
+        help="Penalty for dying.",
+    )
+    train_p.add_argument(
+        "--reward-step-penalty", type=float, default=None,
+        help="Per-step penalty.",
     )
 
     # --- benchmark ---
@@ -116,16 +135,30 @@ def _run_train(args: argparse.Namespace) -> int:
         "checkpoint_dir": "checkpoint_dir",
         "log_dir": "log_dir",
         "state_encoding": "state_encoding",
+        "target_update_freq": "target_update_freq",
+        "max_steps_per_episode": "max_steps_per_episode",
     }
     for cli_name, cfg_name in flag_map.items():
         val = getattr(args, cli_name, None)
         if val is not None:
             overrides[cfg_name] = val
 
-    if overrides:
+    reward_overrides: dict[str, float] = {}
+    reward_flag_map = {
+        "reward_apple": "apple",
+        "reward_death": "death",
+        "reward_step_penalty": "step_penalty",
+    }
+    for cli_name, reward_key in reward_flag_map.items():
+        val = getattr(args, cli_name, None)
+        if val is not None:
+            reward_overrides[reward_key] = val
+
+    if overrides or reward_overrides:
         d = config.to_dict()
         d.update(overrides)
         reward_data = d.pop("reward", {})
+        reward_data.update(reward_overrides)
         d["reward"] = RewardConfig(**reward_data)
         if "conv_channels" in d:
             d["conv_channels"] = tuple(d["conv_channels"])

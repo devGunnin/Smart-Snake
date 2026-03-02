@@ -84,6 +84,7 @@ class SelfPlayTrainer:
         self.episode_rewards: deque[float] = deque(maxlen=100)
         self.episode_lengths: deque[int] = deque(maxlen=100)
         self.episode_wins: deque[int] = deque(maxlen=100)
+        self.episode_scores: deque[float] = deque(maxlen=100)
         self.losses: deque[float] = deque(maxlen=100)
         self.total_steps = 0
         self.total_episodes = 0
@@ -152,13 +153,17 @@ class SelfPlayTrainer:
         self.episode_wins.append(
             1 if info.get("winner") is not None else 0,
         )
+        scores = info.get("scores", [])
+        mean_score = float(np.mean(scores)) if scores else 0.0
+        self.episode_scores.append(mean_score)
         self.total_episodes += 1
 
         return {
             "episode": self.total_episodes,
             "steps": steps,
             "mean_reward": mean_reward,
-            "scores": info.get("scores", []),
+            "mean_score": mean_score,
+            "scores": scores,
             "winner": info.get("winner"),
         }
 
@@ -276,12 +281,16 @@ class SelfPlayTrainer:
             self.episode_wins.append(
                 1 if env_info[ei].get("winner") is not None else 0,
             )
+            scores = env_info[ei].get("scores", [])
+            mean_sc = float(np.mean(scores)) if scores else 0.0
+            self.episode_scores.append(mean_sc)
             self.total_episodes += 1
             results.append({
                 "episode": self.total_episodes,
                 "steps": step_counts[ei],
                 "mean_reward": mean_r,
-                "scores": env_info[ei].get("scores", []),
+                "mean_score": mean_sc,
+                "scores": scores,
                 "winner": env_info[ei].get("winner"),
             })
         return results
@@ -384,22 +393,31 @@ class SelfPlayTrainer:
             float(np.mean(self.episode_wins))
             if self.episode_wins else 0.0
         )
+        avg_score = (
+            float(np.mean(self.episode_scores))
+            if self.episode_scores else 0.0
+        )
+        eps_per_sec = ep / max(elapsed, 1e-6)
 
         logger.info(
-            "Episode %d | reward=%.3f | length=%.1f | loss=%.4f "
-            "| win_rate=%.2f | eps=%.3f | %.1fs",
-            ep, avg_reward, avg_length, avg_loss,
-            win_rate, self.agent.epsilon, elapsed,
+            "Episode %d | reward=%.3f | score=%.2f | length=%.1f "
+            "| loss=%.4f | eps=%.3f | %.1fs (%.1f ep/s)",
+            ep, avg_reward, avg_score, avg_length, avg_loss,
+            self.agent.epsilon, elapsed, eps_per_sec,
         )
 
         if self._writer is not None:
             self._writer.add_scalar("reward/mean", avg_reward, ep)
+            self._writer.add_scalar("score/mean", avg_score, ep)
             self._writer.add_scalar("episode/length", avg_length, ep)
             self._writer.add_scalar("train/loss", avg_loss, ep)
             self._writer.add_scalar(
                 "train/epsilon", self.agent.epsilon, ep,
             )
             self._writer.add_scalar("train/win_rate", win_rate, ep)
+            self._writer.add_scalar(
+                "throughput/episodes_per_sec", eps_per_sec, ep,
+            )
 
     def _save_versioned_checkpoint(
         self, ep: int, *, final: bool = False,

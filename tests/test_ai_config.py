@@ -10,9 +10,9 @@ from smart_snake.ai.config import RewardConfig, TrainingConfig
 class TestRewardConfig:
     def test_defaults(self):
         cfg = RewardConfig()
-        assert cfg.apple == 1.0
-        assert cfg.death == -1.0
-        assert cfg.step_penalty == -0.01
+        assert cfg.apple == 3.0
+        assert cfg.death == -3.0
+        assert cfg.step_penalty == -0.02
 
     def test_custom_values(self):
         cfg = RewardConfig(apple=2.0, death=-10.0, survival_bonus=0.1)
@@ -29,13 +29,20 @@ class TestTrainingConfig:
         assert cfg.dueling is True
         assert cfg.double_dqn is True
         assert cfg.state_encoding == "absolute"
+        assert cfg.num_envs == 4
+        assert cfg.learning_rate == 3e-4
+        assert cfg.batch_size == 128
+        assert cfg.min_buffer_size == 500
+        assert cfg.epsilon_decay_steps == 50_000
+        assert cfg.target_update_freq == 500
+        assert cfg.max_steps_per_episode == 500
 
     def test_to_dict(self):
         cfg = TrainingConfig()
         d = cfg.to_dict()
         assert isinstance(d, dict)
         assert d["grid_width"] == 20
-        assert d["reward"]["apple"] == 1.0
+        assert d["reward"]["apple"] == 3.0
 
     def test_save_and_load(self, tmp_path):
         cfg = TrainingConfig(
@@ -78,3 +85,9 @@ class TestTrainingConfig:
     def test_invalid_num_envs_rejected(self):
         with pytest.raises(ValueError, match="num_envs must be at least 1"):
             TrainingConfig(num_envs=0)
+
+    def test_invalid_target_update_freq_rejected(self):
+        with pytest.raises(
+            ValueError, match="target_update_freq must be at least 1",
+        ):
+            TrainingConfig(target_update_freq=0)
