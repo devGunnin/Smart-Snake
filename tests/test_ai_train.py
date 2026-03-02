@@ -85,6 +85,22 @@ class TestSelfPlayTrainer:
         assert trainer.total_episodes == 10
         trainer.close()
 
+    def test_caps_minibatches_to_available_samples(self, tmp_path):
+        cfg = _fast_config(
+            max_episodes=1,
+            max_steps_per_episode=1,
+            num_envs=1,
+            rollout_steps=16,
+            num_minibatches=4,
+            checkpoint_dir=str(tmp_path / "ckpts"),
+            log_dir=str(tmp_path / "runs"),
+        )
+        trainer = SelfPlayTrainer(cfg, device="cpu")
+        trainer.train()
+        assert trainer.total_episodes == 1
+        assert len(trainer.losses) > 0
+        trainer.close()
+
     def test_samples_snapshot_opponents_during_rollout(self, monkeypatch):
         cfg = _fast_config(
             max_episodes=1,
@@ -160,8 +176,9 @@ class TestSelfPlayTrainer:
         ]
 
         class _StubRolloutBuffer:
-            def __init__(self, obs_shape):
+            def __init__(self, obs_shape, num_agents):
                 self.obs_shape = obs_shape
+                self.num_agents = num_agents
 
             def __len__(self):
                 return 1
@@ -174,6 +191,7 @@ class TestSelfPlayTrainer:
 
         trainer._rollout_buffer = _StubRolloutBuffer(  # type: ignore[assignment]
             trainer._rollout_buffer.obs_shape,
+            trainer._num_envs,
         )
 
         episode_targets = iter((23, 25))

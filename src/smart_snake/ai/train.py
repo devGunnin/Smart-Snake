@@ -309,9 +309,24 @@ class SelfPlayTrainer:
             )
 
             # PPO update: multiple epochs over mini-batches.
+            num_samples = (
+                len(self._rollout_buffer)
+                * self._rollout_buffer.num_agents
+            )
+            effective_minibatches = min(
+                cfg.num_minibatches, num_samples,
+            )
+            if effective_minibatches < cfg.num_minibatches:
+                logger.warning(
+                    "Capping num_minibatches to collected samples: "
+                    "requested=%d, effective=%d, samples=%d.",
+                    cfg.num_minibatches,
+                    effective_minibatches,
+                    num_samples,
+                )
             for _epoch in range(cfg.ppo_epochs):
                 batches = self._rollout_buffer.generate_batches(
-                    cfg.num_minibatches, rng=self._rng,
+                    effective_minibatches, rng=self._rng,
                 )
                 metrics = self.agent.update(batches)
                 self.losses.append(metrics["total_loss"])

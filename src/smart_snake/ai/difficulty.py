@@ -200,7 +200,16 @@ class DifficultyAgent:
                 ).to(self._device, dtype=torch.bool)
             logits, _ = self._net(t, action_mask=mask_t)
             greedy = logits.argmax(dim=1).cpu().numpy()
-        random_actions = self._rng.integers(4, size=batch_size)
+        random_actions = np.empty(batch_size, dtype=np.int64)
+        if action_masks is None:
+            random_actions = self._rng.integers(4, size=batch_size)
+        else:
+            for idx, mask in enumerate(action_masks):
+                valid = np.where(mask)[0]
+                if len(valid) > 0:
+                    random_actions[idx] = int(self._rng.choice(valid))
+                else:
+                    random_actions[idx] = int(self._rng.integers(4))
         actions = np.where(random_mask, random_actions, greedy)
         return actions.tolist()
 

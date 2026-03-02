@@ -202,6 +202,23 @@ class TestDifficultyAgent:
             actions.add(a)
         assert all(a in {2, 3} for a in actions)
 
+    def test_select_actions_batch_random_respects_masks(self, tmp_path):
+        ckpt_path = tmp_path / "model.pt"
+        _save_test_checkpoint(ckpt_path)
+
+        agent = DifficultyAgent(
+            ckpt_path, random_action_prob=1.0, device="cpu",
+        )
+        states = [
+            np.random.randn(
+                NUM_CHANNELS, 10, 10,
+            ).astype(np.float32)
+            for _ in range(8)
+        ]
+        masks = [np.array([False, False, True, False]) for _ in states]
+        actions = agent.select_actions_batch(states, action_masks=masks)
+        assert all(a == 2 for a in actions)
+
 
 class TestLoadTierAgent:
     def test_load_tier_agent(self, tmp_path):
