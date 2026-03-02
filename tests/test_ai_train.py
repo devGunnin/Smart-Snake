@@ -24,6 +24,7 @@ def _fast_config(**overrides) -> TrainingConfig:
         log_interval=2,
         save_interval=100,
         prioritized_replay=False,
+        num_envs=1,
     )
     defaults.update(overrides)
     return TrainingConfig(**defaults)
@@ -177,4 +178,22 @@ class TestSelfPlayTrainer:
         trainer.train()
         mgr = trainer.model_manager
         assert len(mgr.versions) > 0
+        trainer.close()
+
+    def test_episode_scores_tracked(self):
+        trainer = SelfPlayTrainer(_fast_config(), device="cpu")
+        metrics = trainer.run_episode()
+        assert "mean_score" in metrics
+        assert isinstance(metrics["mean_score"], float)
+        assert len(trainer.episode_scores) == 1
+        trainer.close()
+
+    def test_parallel_episodes_track_scores(self):
+        cfg = _fast_config(num_envs=2, max_episodes=4)
+        trainer = SelfPlayTrainer(cfg, device="cpu")
+        results = trainer.run_parallel_episodes()
+        assert len(results) == 2
+        for r in results:
+            assert "mean_score" in r
+        assert len(trainer.episode_scores) == 2
         trainer.close()
