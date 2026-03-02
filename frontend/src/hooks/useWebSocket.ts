@@ -25,6 +25,7 @@ export function useWebSocket(
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectCountRef = useRef(0);
   const reconnectTimerRef = useRef<number | null>(null);
+  const connectRef = useRef<() => void>(() => {});
 
   const connect = useCallback(() => {
     if (!url) return;
@@ -57,7 +58,9 @@ export function useWebSocket(
         setStatus("connecting");
         reconnectCountRef.current += 1;
         reconnectTimerRef.current = window.setTimeout(
-          connect,
+          () => {
+            connectRef.current();
+          },
           RECONNECT_DELAY_MS,
         );
       } else {
@@ -71,8 +74,15 @@ export function useWebSocket(
   }, [url]);
 
   useEffect(() => {
-    connect();
+    connectRef.current = connect;
+  }, [connect]);
+
+  useEffect(() => {
+    const initialConnectId = window.setTimeout(() => {
+      connectRef.current();
+    }, 0);
     return () => {
+      clearTimeout(initialConnectId);
       if (reconnectTimerRef.current !== null) {
         clearTimeout(reconnectTimerRef.current);
       }

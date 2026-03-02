@@ -49,9 +49,16 @@ export default function Lobby({ onJoined }: LobbyProps) {
   }, []);
 
   useEffect(() => {
-    refreshGames();
-    const id = setInterval(refreshGames, POLL_INTERVAL);
-    return () => clearInterval(id);
+    const initialLoadId = window.setTimeout(() => {
+      void refreshGames();
+    }, 0);
+    const pollId = window.setInterval(() => {
+      void refreshGames();
+    }, POLL_INTERVAL);
+    return () => {
+      clearTimeout(initialLoadId);
+      clearInterval(pollId);
+    };
   }, [refreshGames]);
 
   const handleJoin = async (gameId: string) => {
