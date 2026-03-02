@@ -40,10 +40,14 @@ class TestCLIParser:
             "--reward-apple", "5.0",
             "--reward-death", "-5.0",
             "--reward-step-penalty", "-0.05",
+            "--reward-apple-approach", "0.2",
+            "--reward-apple-retreat", "-0.3",
         ])
         assert args.reward_apple == 5.0
         assert args.reward_death == -5.0
         assert args.reward_step_penalty == -0.05
+        assert args.reward_apple_approach == 0.2
+        assert args.reward_apple_retreat == -0.3
 
     def test_train_extra_flags(self):
         parser = _build_parser()

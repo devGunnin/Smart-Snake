@@ -12,7 +12,11 @@ class TestRewardConfig:
         cfg = RewardConfig()
         assert cfg.apple == 3.0
         assert cfg.death == -3.0
-        assert cfg.step_penalty == -0.02
+        assert cfg.step_penalty == -0.01
+        assert cfg.survival_bonus == 0.01
+        assert cfg.kill_opponent == 1.0
+        assert cfg.apple_approach == 0.1
+        assert cfg.apple_retreat == -0.1
 
     def test_custom_values(self):
         cfg = RewardConfig(apple=2.0, death=-10.0, survival_bonus=0.1)
@@ -28,14 +32,16 @@ class TestTrainingConfig:
         assert cfg.player_count == 2
         assert cfg.dueling is True
         assert cfg.double_dqn is True
-        assert cfg.state_encoding == "absolute"
+        assert cfg.state_encoding == "relative"
         assert cfg.num_envs == 4
         assert cfg.learning_rate == 3e-4
         assert cfg.batch_size == 128
-        assert cfg.min_buffer_size == 500
-        assert cfg.epsilon_decay_steps == 50_000
+        assert cfg.buffer_size == 500_000
+        assert cfg.min_buffer_size == 5_000
+        assert cfg.epsilon_decay_steps == 200_000
         assert cfg.target_update_freq == 500
-        assert cfg.max_steps_per_episode == 500
+        assert cfg.max_episodes == 50_000
+        assert cfg.max_steps_per_episode == 1_000
 
     def test_to_dict(self):
         cfg = TrainingConfig()
@@ -57,7 +63,7 @@ class TestTrainingConfig:
         assert loaded.grid_width == 15
         assert loaded.epsilon_start == 0.5
         assert loaded.reward.apple == 3.0
-        assert loaded.state_encoding == "absolute"
+        assert loaded.state_encoding == "relative"
 
     def test_json_roundtrip(self, tmp_path):
         cfg = TrainingConfig(conv_channels=(16, 32, 64))

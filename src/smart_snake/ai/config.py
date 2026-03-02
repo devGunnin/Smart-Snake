@@ -19,9 +19,11 @@ class RewardConfig:
 
     apple: float = 3.0
     death: float = -3.0
-    step_penalty: float = -0.02
-    survival_bonus: float = 0.0
-    kill_opponent: float = 0.5
+    step_penalty: float = -0.01
+    survival_bonus: float = 0.01
+    kill_opponent: float = 1.0
+    apple_approach: float = 0.1
+    apple_retreat: float = -0.1
 
 
 @dataclass(frozen=True)
@@ -38,7 +40,7 @@ class TrainingConfig:
     wall_mode: str = "death"
     max_apples: int = 3
     initial_snake_length: int = 3
-    state_encoding: StateEncodingMode = "absolute"
+    state_encoding: StateEncodingMode = "relative"
 
     # Network
     dueling: bool = True
@@ -53,8 +55,8 @@ class TrainingConfig:
     max_grad_norm: float = 10.0
 
     # Replay buffer
-    buffer_size: int = 100_000
-    min_buffer_size: int = 500
+    buffer_size: int = 500_000
+    min_buffer_size: int = 5_000
     prioritized_replay: bool = True
     priority_alpha: float = 0.6
     priority_beta_start: float = 0.4
@@ -64,14 +66,14 @@ class TrainingConfig:
     # Exploration
     epsilon_start: float = 1.0
     epsilon_end: float = 0.01
-    epsilon_decay_steps: int = 50_000
+    epsilon_decay_steps: int = 200_000
 
     # Target network
     target_update_freq: int = 500
 
     # Training loop
-    max_episodes: int = 10_000
-    max_steps_per_episode: int = 500
+    max_episodes: int = 50_000
+    max_steps_per_episode: int = 1_000
     log_interval: int = 100
     save_interval: int = 1_000
 
