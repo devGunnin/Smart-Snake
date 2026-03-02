@@ -162,7 +162,7 @@ class GameManager:
         max_apples: int = 3,
         initial_snake_length: int = 3,
         dead_body_mode: str = "remove",
-        tick_rate_ms: int = 200,
+        tick_rate_ms: int = 150,
         client_ip: str = "unknown",
         ai_opponents: list[dict[str, str]] | None = None,
     ) -> GameInstance:

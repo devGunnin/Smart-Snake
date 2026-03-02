@@ -31,7 +31,7 @@ class CreateGameRequest(BaseModel):
     max_apples: int = Field(default=3, ge=1)
     initial_snake_length: int = Field(default=3, ge=1)
     dead_body_mode: str = "remove"
-    tick_rate_ms: int = Field(default=200, ge=50, le=2000)
+    tick_rate_ms: int = Field(default=150, ge=50, le=2000)
     ai_opponents: list[AiOpponentConfig] = Field(default_factory=list)
 
 

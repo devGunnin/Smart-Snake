@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from starlette.routing import Mount
 
+from smart_snake.server import app as app_module
 from smart_snake.server.app import create_app
 from smart_snake.server.game_manager import GameManager
 
@@ -34,6 +36,7 @@ class TestCreateGame:
         assert data["status"] == "waiting"
         assert data["max_players"] == 2
         assert data["player_count"] == 0
+        assert data["tick_rate_ms"] == 150
         assert "game_id" in data
 
     @pytest.mark.asyncio
@@ -363,3 +366,54 @@ class TestGameStateAfterStart:
         assert "tick" in state
         assert "snakes" in state
         assert len(state["snakes"]) == 2
+
+
+class TestCreateAppFactory:
+    def test_env_false_does_not_mount_frontend(
+        self, monkeypatch, tmp_path,
+    ):
+        dist = tmp_path / "dist"
+        dist.mkdir()
+        (dist / "index.html").write_text("<html>ok</html>", encoding="utf-8")
+        monkeypatch.setattr(app_module, "_FRONTEND_DIR", str(dist))
+        monkeypatch.setenv("SMART_SNAKE_SERVE_FRONTEND", "0")
+
+        application = create_app()
+
+        assert all(
+            not isinstance(route, Mount)
+            for route in application.routes
+        )
+
+    def test_env_true_mounts_frontend(self, monkeypatch, tmp_path):
+        dist = tmp_path / "dist"
+        dist.mkdir()
+        (dist / "index.html").write_text("<html>ok</html>", encoding="utf-8")
+        monkeypatch.setattr(app_module, "_FRONTEND_DIR", str(dist))
+        monkeypatch.setenv("SMART_SNAKE_SERVE_FRONTEND", "true")
+
+        application = create_app()
+
+        assert any(
+            isinstance(route, Mount) and route.path == ""
+            for route in application.routes
+        )
+
+    @pytest.mark.asyncio
+    async def test_env_true_keeps_api_routes_available(
+        self, monkeypatch, tmp_path,
+    ):
+        dist = tmp_path / "dist"
+        dist.mkdir()
+        (dist / "index.html").write_text("<html>ok</html>", encoding="utf-8")
+        monkeypatch.setattr(app_module, "_FRONTEND_DIR", str(dist))
+        monkeypatch.setenv("SMART_SNAKE_SERVE_FRONTEND", "1")
+
+        application = create_app()
+        application.state.game_manager = GameManager()
+        transport = ASGITransport(app=application)
+        async with AsyncClient(transport=transport, base_url=BASE) as c:
+            health = await c.get("/health")
+
+        assert health.status_code == 200
+        assert health.json()["status"] == "ok"

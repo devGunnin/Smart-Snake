@@ -14,10 +14,27 @@ from smart_snake.server.models import (
 )
 
 router = APIRouter(prefix="/games", tags=["games"])
+health_router = APIRouter(tags=["health"])
 
 
 def _get_manager(request: Request):
     return request.app.state.game_manager
+
+
+@health_router.get("/health")
+async def health_check(request: Request) -> dict:
+    """Liveness / readiness probe for container orchestration."""
+    manager = _get_manager(request)
+    games = manager._games
+    active = sum(1 for g in games.values() if g.status.value == "active")
+    waiting = sum(1 for g in games.values() if g.status.value == "waiting")
+    finished = sum(1 for g in games.values() if g.status.value == "finished")
+    total_players = sum(g.player_count for g in games.values())
+    return {
+        "status": "ok",
+        "games": {"active": active, "waiting": waiting, "finished": finished},
+        "total_players": total_players,
+    }
 
 
 @router.post("", status_code=201)
