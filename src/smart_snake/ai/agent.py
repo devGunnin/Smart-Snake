@@ -90,6 +90,27 @@ class MAPPOAgent:
             float(value.item()),
         )
 
+    def select_action_with_policy(
+        self,
+        policy: ActorCriticNetwork,
+        state: np.ndarray,
+        action_mask: np.ndarray | None = None,
+    ) -> int:
+        """Sample one action from an explicit policy network."""
+        with torch.no_grad():
+            t = torch.from_numpy(state).unsqueeze(0).to(
+                self.device, dtype=torch.float32,
+            )
+            mask_t = None
+            if action_mask is not None:
+                mask_t = torch.from_numpy(action_mask).unsqueeze(0).to(
+                    self.device, dtype=torch.bool,
+                )
+            logits, _ = policy(t, action_mask=mask_t)
+            dist = torch.distributions.Categorical(logits=logits)
+            action = dist.sample()
+        return int(action.item())
+
     def select_actions_batch(
         self,
         states: list[np.ndarray],

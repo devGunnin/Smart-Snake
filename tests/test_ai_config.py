@@ -121,3 +121,21 @@ class TestTrainingConfig:
             ValueError, match="rollout_steps must be at least 1",
         ):
             TrainingConfig(rollout_steps=0)
+
+    def test_invalid_snapshot_interval_rejected(self):
+        with pytest.raises(
+            ValueError, match="snapshot_interval must be >= 0",
+        ):
+            TrainingConfig(snapshot_interval=-1)
+
+    def test_invalid_snapshot_pool_size_rejected(self):
+        with pytest.raises(
+            ValueError, match="snapshot_pool_size must be at least 1",
+        ):
+            TrainingConfig(snapshot_pool_size=0)
+
+    def test_invalid_latest_vs_latest_prob_rejected(self):
+        with pytest.raises(
+            ValueError, match="latest_vs_latest_prob must be in",
+        ):
+            TrainingConfig(latest_vs_latest_prob=1.1)

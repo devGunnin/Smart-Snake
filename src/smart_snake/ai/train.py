@@ -13,6 +13,7 @@ from smart_snake.ai.agent import MAPPOAgent
 from smart_snake.ai.config import TrainingConfig
 from smart_snake.ai.environment import MultiSnakeEnv
 from smart_snake.ai.model_manager import ModelManager
+from smart_snake.ai.networks import ActorCriticNetwork
 from smart_snake.ai.replay_buffer import RolloutBuffer
 
 logger = logging.getLogger(__name__)
@@ -67,10 +68,14 @@ class SelfPlayTrainer:
         obs_shape = self._envs[0].observation_space.shape
         self._rollout_buffer = RolloutBuffer(
             rollout_steps=self.config.rollout_steps,
-            num_agents=self.config.player_count * self._num_envs,
+            num_agents=self._num_envs,
             obs_shape=obs_shape,
             num_actions=4,
         )
+        self._learner_ids = [0] * self._num_envs
+        self._opponent_policies: list[ActorCriticNetwork | None] = [
+            None
+        ] * self._num_envs
 
         self._rng = np.random.default_rng()
 
@@ -103,12 +108,18 @@ class SelfPlayTrainer:
         """Reset all environments and return stacked observations."""
         all_obs: list[list[np.ndarray]] = []
         all_info: list[dict] = []
-        for env in self._envs:
+        for ei, env in enumerate(self._envs):
             obs, info = env.reset(
                 seed=int(self._rng.integers(2**31)),
             )
             all_obs.append(list(obs))
             all_info.append(info)
+            self._learner_ids[ei] = int(
+                self._rng.integers(self.config.player_count),
+            )
+            self._opponent_policies[ei] = self.agent.sample_opponent(
+                rng=self._rng,
+            )
         return all_obs, all_info
 
     def _collect_rollout(
@@ -121,102 +132,95 @@ class SelfPlayTrainer:
         completed episodes during this rollout.
         """
         cfg = self.config
-        num_agents = cfg.player_count
+        num_players = cfg.player_count
         completed_episodes = 0
         env_steps = [0] * self._num_envs
         env_rewards: list[list[float]] = [
-            [0.0] * num_agents for _ in range(self._num_envs)
+            [0.0] * num_players for _ in range(self._num_envs)
         ]
 
         self._rollout_buffer.reset()
 
         for _step in range(cfg.rollout_steps):
-            # Flatten observations across envs and agents.
-            flat_states: list[np.ndarray] = []
-            flat_masks: list[np.ndarray] = []
-            for ei in range(self._num_envs):
-                masks = self._envs[ei].get_action_masks()
-                for sid in range(num_agents):
-                    flat_states.append(states[ei][sid])
-                    flat_masks.append(masks[sid])
-
-            actions, log_probs, values = (
-                self.agent.select_actions_batch(
-                    flat_states, action_masks=flat_masks,
-                )
-            )
-
-            # Reshape back to (env, agent).
-            all_actions: list[list[int]] = []
-            all_log_probs: list[list[float]] = []
-            all_values: list[list[float]] = []
-            all_masks_np: list[list[np.ndarray]] = []
-            idx = 0
-            for _ei in range(self._num_envs):
-                env_acts: list[int] = []
-                env_lps: list[float] = []
-                env_vals: list[float] = []
-                env_msks: list[np.ndarray] = []
-                for _sid in range(num_agents):
-                    env_acts.append(actions[idx])
-                    env_lps.append(log_probs[idx])
-                    env_vals.append(values[idx])
-                    env_msks.append(flat_masks[idx])
-                    idx += 1
-                all_actions.append(env_acts)
-                all_log_probs.append(env_lps)
-                all_values.append(env_vals)
-                all_masks_np.append(env_msks)
-
-            # Step each environment.
+            # Step each environment and collect learner-only transitions.
             step_states = np.zeros(
-                (self._num_envs * num_agents, *self._rollout_buffer.obs_shape),
+                (self._num_envs, *self._rollout_buffer.obs_shape),
                 dtype=np.float32,
             )
             step_actions = np.zeros(
-                self._num_envs * num_agents, dtype=np.int64,
+                self._num_envs, dtype=np.int64,
             )
             step_rewards = np.zeros(
-                self._num_envs * num_agents, dtype=np.float32,
+                self._num_envs, dtype=np.float32,
             )
             step_values = np.zeros(
-                self._num_envs * num_agents, dtype=np.float32,
+                self._num_envs, dtype=np.float32,
             )
             step_log_probs = np.zeros(
-                self._num_envs * num_agents, dtype=np.float32,
+                self._num_envs, dtype=np.float32,
             )
             step_dones = np.zeros(
-                self._num_envs * num_agents, dtype=np.float32,
+                self._num_envs, dtype=np.float32,
             )
             step_masks = np.ones(
-                (self._num_envs * num_agents, 4), dtype=bool,
+                (self._num_envs, 4), dtype=bool,
             )
 
             for ei in range(self._num_envs):
+                masks = self._envs[ei].get_action_masks()
+                learner_sid = self._learner_ids[ei]
+                learner_action, learner_log_prob, learner_value = (
+                    self.agent.select_action(
+                        states[ei][learner_sid],
+                        action_mask=masks[learner_sid],
+                        rng=self._rng,
+                    )
+                )
+                env_actions: list[int] = [0] * num_players
+                env_actions[learner_sid] = learner_action
+
+                opponent_policy = self._opponent_policies[ei]
+                for sid in range(num_players):
+                    if sid == learner_sid:
+                        continue
+                    if opponent_policy is None:
+                        action, _, _ = self.agent.select_action(
+                            states[ei][sid],
+                            action_mask=masks[sid],
+                            rng=self._rng,
+                        )
+                    else:
+                        action = self.agent.select_action_with_policy(
+                            opponent_policy,
+                            states[ei][sid],
+                            action_mask=masks[sid],
+                        )
+                    env_actions[sid] = action
+
                 next_obs, rewards, terminated, truncated, info = (
-                    self._envs[ei].step(all_actions[ei])
+                    self._envs[ei].step(env_actions)
                 )
                 env_steps[ei] += 1
                 self.total_steps += 1
 
-                for sid in range(num_agents):
-                    flat_idx = ei * num_agents + sid
-                    step_states[flat_idx] = states[ei][sid]
-                    step_actions[flat_idx] = all_actions[ei][sid]
-                    step_rewards[flat_idx] = rewards[sid]
-                    step_values[flat_idx] = all_values[ei][sid]
-                    step_log_probs[flat_idx] = all_log_probs[ei][sid]
-                    done = terminated[sid] or truncated[sid]
-                    step_dones[flat_idx] = float(done)
-                    step_masks[flat_idx] = all_masks_np[ei][sid]
+                for sid in range(num_players):
                     env_rewards[ei][sid] += rewards[sid]
+
+                step_states[ei] = states[ei][learner_sid]
+                step_actions[ei] = learner_action
+                step_rewards[ei] = rewards[learner_sid]
+                step_values[ei] = learner_value
+                step_log_probs[ei] = learner_log_prob
+                learner_done = terminated[learner_sid] or truncated[learner_sid]
+                step_dones[ei] = float(learner_done)
+                step_masks[ei] = masks[learner_sid]
 
                 states[ei] = list(next_obs)
 
                 # Handle episode completion.
                 if info.get("game_over") or all(
                     terminated[s] or truncated[s]
-                    for s in range(num_agents)
+                    for s in range(num_players)
                 ):
                     mean_r = float(np.mean(env_rewards[ei]))
                     self.episode_rewards.append(mean_r)
@@ -229,22 +233,29 @@ class SelfPlayTrainer:
                         float(np.mean(scores)) if scores else 0.0
                     )
                     self.episode_scores.append(mean_sc)
-                    self.total_episodes += 1
-                    completed_episodes += 1
+                    if self.total_episodes < cfg.max_episodes:
+                        self.total_episodes += 1
+                        completed_episodes += 1
 
-                    # Reset this env.
-                    obs, _ = self._envs[ei].reset(
-                        seed=int(self._rng.integers(2**31)),
-                    )
-                    states[ei] = list(obs)
-                    env_steps[ei] = 0
-                    env_rewards[ei] = [0.0] * num_agents
+                    if self.total_episodes < cfg.max_episodes:
+                        # Reset this env for continued collection.
+                        obs, _ = self._envs[ei].reset(
+                            seed=int(self._rng.integers(2**31)),
+                        )
+                        states[ei] = list(obs)
+                        env_steps[ei] = 0
+                        env_rewards[ei] = [0.0] * num_players
+                        self._learner_ids[ei] = int(
+                            self._rng.integers(num_players),
+                        )
+                        self._opponent_policies[ei] = (
+                            self.agent.sample_opponent(
+                                rng=self._rng,
+                            )
+                        )
 
             self._rollout_buffer.add(
-                states=step_states.reshape(
-                    self._num_envs * num_agents,
-                    *self._rollout_buffer.obs_shape,
-                ),
+                states=step_states,
                 actions=step_actions,
                 rewards=step_rewards,
                 values=step_values,
@@ -252,6 +263,8 @@ class SelfPlayTrainer:
                 dones=step_dones,
                 action_masks=step_masks,
             )
+            if self.total_episodes >= cfg.max_episodes:
+                break
 
         return states, completed_episodes
 
@@ -278,12 +291,14 @@ class SelfPlayTrainer:
         while self.total_episodes < cfg.max_episodes:
             # Collect rollout.
             states, _completed = self._collect_rollout(states)
+            if len(self._rollout_buffer) == 0:
+                break
 
             # Bootstrap value for last state.
             flat_last: list[np.ndarray] = []
             for ei in range(self._num_envs):
-                for sid in range(cfg.player_count):
-                    flat_last.append(states[ei][sid])
+                learner_sid = self._learner_ids[ei]
+                flat_last.append(states[ei][learner_sid])
             last_values = np.array(
                 self.agent.get_values(flat_last), dtype=np.float32,
             )

@@ -176,6 +176,50 @@ class TestRolloutBufferBatches:
             assert b["returns"].shape[0] == 4
             assert b["action_masks"].shape == (4, 4)
 
+    def test_generate_batches_uses_all_samples(self):
+        buf = RolloutBuffer(
+            rollout_steps=5, num_agents=2,
+            obs_shape=(NUM_CHANNELS, 10, 10), num_actions=4,
+        )
+        for _ in range(5):
+            buf.add(
+                states=np.random.randn(
+                    2, NUM_CHANNELS, 10, 10,
+                ).astype(np.float32),
+                actions=np.random.randint(
+                    0, 4, size=2,
+                ).astype(np.int64),
+                rewards=np.random.randn(2).astype(np.float32),
+                values=np.random.randn(2).astype(np.float32),
+                log_probs=np.random.randn(2).astype(np.float32),
+                dones=np.zeros(2, dtype=np.float32),
+                action_masks=np.ones((2, 4), dtype=bool),
+            )
+        buf.compute_returns(np.zeros(2, dtype=np.float32), 0.99, 0.95)
+        batches = buf.generate_batches(num_minibatches=3)
+        total = sum(batch["states"].shape[0] for batch in batches)
+        assert total == 10
+
+    def test_generate_batches_rejects_too_many_minibatches(self):
+        buf = RolloutBuffer(
+            rollout_steps=1, num_agents=1,
+            obs_shape=(NUM_CHANNELS, 10, 10), num_actions=4,
+        )
+        buf.add(
+            states=np.random.randn(
+                1, NUM_CHANNELS, 10, 10,
+            ).astype(np.float32),
+            actions=np.array([0], dtype=np.int64),
+            rewards=np.array([0.0], dtype=np.float32),
+            values=np.array([0.0], dtype=np.float32),
+            log_probs=np.array([0.0], dtype=np.float32),
+            dones=np.array([0.0], dtype=np.float32),
+            action_masks=np.ones((1, 4), dtype=bool),
+        )
+        buf.compute_returns(np.array([0.0], dtype=np.float32), 0.99, 0.95)
+        with pytest.raises(ValueError, match="num_minibatches must be <="):
+            buf.generate_batches(num_minibatches=2)
+
     def test_reset_clears_buffer(self):
         buf = RolloutBuffer(
             rollout_steps=4, num_agents=2,

@@ -149,10 +149,21 @@ class RolloutBuffer:
         ``states``, ``actions``, ``log_probs``, ``advantages``,
         ``returns``, and ``action_masks``.
         """
+        if num_minibatches < 1:
+            raise ValueError(
+                "num_minibatches must be at least 1, "
+                f"got {num_minibatches}.",
+            )
         gen = rng or np.random.default_rng()
         total = self._step * self.num_agents
+        if total < 1:
+            raise ValueError("Cannot generate batches from an empty buffer.")
+        if num_minibatches > total:
+            raise ValueError(
+                "num_minibatches must be <= number of collected samples: "
+                f"{num_minibatches} > {total}.",
+            )
         indices = gen.permutation(total)
-        batch_size = total // num_minibatches
 
         flat_states = self.states[:self._step].reshape(
             total, *self.obs_shape,
@@ -166,10 +177,7 @@ class RolloutBuffer:
         )
 
         batches: list[dict[str, np.ndarray]] = []
-        for start in range(0, total, batch_size):
-            if start + batch_size > total:
-                break
-            idx = indices[start:start + batch_size]
+        for idx in np.array_split(indices, num_minibatches):
             batches.append({
                 "states": flat_states[idx],
                 "actions": flat_actions[idx],

@@ -109,6 +109,21 @@ class TrainingConfig:
                 "rollout_steps must be at least 1, "
                 f"got {self.rollout_steps}.",
             )
+        if self.snapshot_interval < 0:
+            raise ValueError(
+                "snapshot_interval must be >= 0, "
+                f"got {self.snapshot_interval}.",
+            )
+        if self.snapshot_pool_size < 1:
+            raise ValueError(
+                "snapshot_pool_size must be at least 1, "
+                f"got {self.snapshot_pool_size}.",
+            )
+        if not 0.0 <= self.latest_vs_latest_prob <= 1.0:
+            raise ValueError(
+                "latest_vs_latest_prob must be in [0.0, 1.0], "
+                f"got {self.latest_vs_latest_prob}.",
+            )
 
     def to_dict(self) -> dict:
         """Serialize to a plain dict (tuples become lists)."""

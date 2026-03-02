@@ -40,7 +40,7 @@ class TestSelfPlayTrainer:
     def test_train_completes(self):
         trainer = SelfPlayTrainer(_fast_config(), device="cpu")
         trainer.train()
-        assert trainer.total_episodes >= 5
+        assert trainer.total_episodes == 5
         trainer.close()
 
     def test_losses_collected(self):
@@ -54,7 +54,7 @@ class TestSelfPlayTrainer:
         cfg = _fast_config(player_count=3, max_episodes=3)
         trainer = SelfPlayTrainer(cfg, device="cpu")
         trainer.train()
-        assert trainer.total_episodes >= 3
+        assert trainer.total_episodes == 3
         trainer.close()
 
     def test_parallel_envs(self):
@@ -62,7 +62,7 @@ class TestSelfPlayTrainer:
         trainer = SelfPlayTrainer(cfg, device="cpu")
         assert trainer._num_envs == 2
         trainer.train()
-        assert trainer.total_episodes >= 10
+        assert trainer.total_episodes == 10
         trainer.close()
 
     def test_parallel_train_completes(self, tmp_path):
@@ -72,7 +72,33 @@ class TestSelfPlayTrainer:
         )
         trainer = SelfPlayTrainer(cfg, device="cpu")
         trainer.train()
-        assert trainer.total_episodes >= 10
+        assert trainer.total_episodes == 10
+        trainer.close()
+
+    def test_samples_snapshot_opponents_during_rollout(self, monkeypatch):
+        cfg = _fast_config(
+            max_episodes=1,
+            latest_vs_latest_prob=0.0,
+        )
+        trainer = SelfPlayTrainer(cfg, device="cpu")
+        trainer.agent.save_snapshot()
+
+        called = {"count": 0}
+        original = trainer.agent.select_action_with_policy
+
+        def _counting_select_action_with_policy(*args, **kwargs):
+            called["count"] += 1
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(
+            trainer.agent,
+            "select_action_with_policy",
+            _counting_select_action_with_policy,
+        )
+
+        states, _ = trainer._reset_envs()
+        trainer._collect_rollout(states)
+        assert called["count"] > 0
         trainer.close()
 
     def test_rejects_invalid_num_envs(self):
