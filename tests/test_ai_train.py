@@ -1,5 +1,7 @@
 """Tests for the self-play training loop."""
 
+import pytest
+
 from smart_snake.ai.config import TrainingConfig
 from smart_snake.ai.train import SelfPlayTrainer
 
@@ -87,4 +89,92 @@ class TestSelfPlayTrainer:
         trainer = SelfPlayTrainer(cfg, device="cpu")
         metrics = trainer.run_episode()
         assert metrics["steps"] > 0
+        trainer.close()
+
+    def test_parallel_envs(self):
+        cfg = _fast_config(num_envs=2, max_episodes=4)
+        trainer = SelfPlayTrainer(cfg, device="cpu")
+        assert trainer._num_envs == 2
+        assert trainer._vec_env is not None
+        results = trainer.run_parallel_episodes()
+        assert len(results) == 2
+        assert trainer.total_episodes == 2
+        trainer.close()
+
+    def test_parallel_train_completes(self, tmp_path):
+        cfg = _fast_config(
+            num_envs=2, max_episodes=4,
+            checkpoint_dir=str(tmp_path / "ckpts"),
+        )
+        trainer = SelfPlayTrainer(cfg, device="cpu")
+        trainer.train()
+        assert trainer.total_episodes == 4
+        trainer.close()
+
+    def test_parallel_train_respects_max_episodes(self, tmp_path):
+        cfg = _fast_config(
+            num_envs=2, max_episodes=5,
+            checkpoint_dir=str(tmp_path / "ckpts"),
+        )
+        trainer = SelfPlayTrainer(cfg, device="cpu")
+        trainer.train()
+        assert trainer.total_episodes == 5
+        trainer.close()
+
+    def test_parallel_train_saves_when_save_interval_crossed(self, tmp_path):
+        cfg = _fast_config(
+            num_envs=2,
+            max_episodes=5,
+            save_interval=3,
+            log_interval=100,
+            checkpoint_dir=str(tmp_path / "ckpts"),
+        )
+        trainer = SelfPlayTrainer(cfg, device="cpu")
+        saved: list[tuple[int, bool]] = []
+        trainer._save_versioned_checkpoint = (
+            lambda ep, final=False: saved.append((ep, final))
+        )
+        trainer.train()
+        assert saved == [(3, False), (5, True)]
+        trainer.close()
+
+    def test_parallel_train_logs_when_log_interval_crossed(self, tmp_path):
+        cfg = _fast_config(
+            num_envs=2,
+            max_episodes=5,
+            log_interval=3,
+            save_interval=100,
+            checkpoint_dir=str(tmp_path / "ckpts"),
+        )
+        trainer = SelfPlayTrainer(cfg, device="cpu")
+        logged_eps: list[int] = []
+        trainer._log_metrics = lambda ep, start: logged_eps.append(ep)
+        trainer._save_versioned_checkpoint = lambda ep, final=False: None
+        trainer.train()
+        assert logged_eps == [3, 5]
+        trainer.close()
+
+    def test_rejects_invalid_num_envs(self):
+        cfg = _fast_config()
+        object.__setattr__(cfg, "num_envs", 0)
+        with pytest.raises(ValueError, match="num_envs must be at least 1"):
+            SelfPlayTrainer(cfg, device="cpu")
+
+    def test_model_manager_exposed(self, tmp_path):
+        cfg = _fast_config(
+            checkpoint_dir=str(tmp_path / "ckpts"),
+        )
+        trainer = SelfPlayTrainer(cfg, device="cpu")
+        assert trainer.model_manager is not None
+        trainer.close()
+
+    def test_versioned_checkpoints_created(self, tmp_path):
+        cfg = _fast_config(
+            save_interval=2,
+            checkpoint_dir=str(tmp_path / "ckpts"),
+        )
+        trainer = SelfPlayTrainer(cfg, device="cpu")
+        trainer.train()
+        mgr = trainer.model_manager
+        assert len(mgr.versions) > 0
         trainer.close()

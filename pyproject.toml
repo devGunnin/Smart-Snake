@@ -28,6 +28,9 @@ dev = [
     "ruff>=0.4",
 ]
 
+[project.scripts]
+smart-snake-train = "smart_snake.ai.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
