@@ -172,6 +172,66 @@ class TestSelfPlayTrainer:
         assert trainer.episode_rewards[-1] == 6.0
         trainer.close()
 
+    def test_episode_wins_track_learner_wins(self, monkeypatch):
+        cfg = _fast_config(
+            max_episodes=1,
+            num_envs=1,
+            rollout_steps=1,
+            player_count=2,
+        )
+        trainer = SelfPlayTrainer(cfg, device="cpu")
+        obs_shape = trainer._rollout_buffer.obs_shape
+
+        class _SingleStepEnv:
+            def reset(self, seed=None):
+                del seed
+                obs = [
+                    np.zeros(obs_shape, dtype=np.float32)
+                    for _ in range(cfg.player_count)
+                ]
+                return obs, {}
+
+            def get_action_masks(self):
+                return [
+                    np.ones(4, dtype=bool)
+                    for _ in range(cfg.player_count)
+                ]
+
+            def step(self, _actions):
+                obs = [
+                    np.zeros(obs_shape, dtype=np.float32)
+                    for _ in range(cfg.player_count)
+                ]
+                rewards = [0.0, 0.0]
+                terminated = [True, True]
+                truncated = [False, False]
+                info = {
+                    "game_over": True,
+                    "winner": 1,
+                    "scores": [0.0, 1.0],
+                }
+                return obs, rewards, terminated, truncated, info
+
+        trainer._envs = [_SingleStepEnv()]
+        monkeypatch.setattr(
+            trainer.agent,
+            "sample_opponent",
+            lambda rng: None,
+        )
+        monkeypatch.setattr(
+            trainer.agent,
+            "select_action",
+            lambda *_args, **_kwargs: (0, 0.0, 0.0),
+        )
+
+        states, _ = trainer._reset_envs()
+        trainer._learner_ids[0] = 0
+        trainer._collect_rollout(states)
+
+        assert trainer.total_episodes == 1
+        assert trainer.episode_wins[-1] == 0
+        trainer.close()
+
     def test_samples_snapshot_opponents_during_rollout(self, monkeypatch):
         cfg = _fast_config(
             max_episodes=1,

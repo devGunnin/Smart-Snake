@@ -235,7 +235,7 @@ class SelfPlayTrainer:
                         self._env_episode_steps[ei],
                     )
                     self.episode_wins.append(
-                        1 if info.get("winner") is not None else 0,
+                        1 if info.get("winner") == learner_sid else 0,
                     )
                     scores = info.get("scores", [])
                     mean_sc = (
