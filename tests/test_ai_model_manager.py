@@ -9,11 +9,15 @@ from smart_snake.ai.config import TrainingConfig
 from smart_snake.ai.model_manager import CheckpointMeta, ModelManager
 
 
-def _dummy_state_dict() -> dict:
+def _dummy_state_dict(weight_fill: float | None = None) -> dict:
     """Create a minimal checkpoint dict for testing."""
+    weights = (
+        torch.randn(4, 4)
+        if weight_fill is None
+        else torch.full((4, 4), weight_fill)
+    )
     return {
-        "online_state_dict": {"layer.weight": torch.randn(4, 4)},
-        "target_state_dict": {"layer.weight": torch.randn(4, 4)},
+        "actor_state_dict": {"layer.weight": weights},
         "optimiser_state_dict": {},
         "step_count": 100,
         "config": TrainingConfig(
@@ -87,6 +91,24 @@ class TestModelManager:
         assert mgr.best_win_rate == 0.8
         assert (tmp_path / "ckpts" / "best_model.pt").exists()
 
+    def test_best_model_ties_break_on_mean_reward(self, tmp_path):
+        mgr = ModelManager(tmp_path / "ckpts")
+        config = TrainingConfig(grid_width=10, grid_height=10)
+        mgr.save_checkpoint(
+            _dummy_state_dict(weight_fill=1.0), step=100, episode=10,
+            win_rate=0.6, mean_reward=1.0, config=config,
+        )
+        mgr.save_checkpoint(
+            _dummy_state_dict(weight_fill=2.0), step=200, episode=20,
+            win_rate=0.6, mean_reward=2.0, config=config,
+        )
+
+        best = mgr.load_best()
+        expected = torch.full((4, 4), 2.0)
+        assert torch.equal(best["actor_state_dict"]["layer.weight"], expected)
+        assert mgr.best_win_rate == 0.6
+        assert mgr.best_mean_reward == 2.0
+
     def test_load_checkpoint_latest(self, tmp_path):
         mgr = ModelManager(tmp_path / "ckpts")
         config = TrainingConfig(grid_width=10, grid_height=10)
@@ -95,7 +117,7 @@ class TestModelManager:
             win_rate=0.5, mean_reward=1.0, config=config,
         )
         loaded = mgr.load_checkpoint()
-        assert "online_state_dict" in loaded
+        assert "actor_state_dict" in loaded
 
     def test_load_checkpoint_by_version(self, tmp_path):
         mgr = ModelManager(tmp_path / "ckpts")
@@ -134,7 +156,7 @@ class TestModelManager:
             win_rate=0.5, mean_reward=1.0, config=config,
         )
         loaded = mgr.load_best()
-        assert "online_state_dict" in loaded
+        assert "actor_state_dict" in loaded
 
     def test_load_best_not_found(self, tmp_path):
         mgr = ModelManager(tmp_path / "ckpts")
@@ -169,6 +191,7 @@ class TestModelManager:
         assert len(mgr2.versions) == 1
         assert mgr2.latest_version == 1
         assert mgr2.best_win_rate == 0.5
+        assert mgr2.best_mean_reward == 1.0
 
     def test_export_for_inference(self, tmp_path):
         state = _dummy_state_dict()
@@ -181,10 +204,9 @@ class TestModelManager:
         assert out.exists()
 
         loaded = torch.load(out, weights_only=False)
-        assert "online_state_dict" in loaded
+        assert "actor_state_dict" in loaded
         assert "config" in loaded
         assert "optimiser_state_dict" not in loaded
-        assert "target_state_dict" not in loaded
 
     def test_metadata_json_is_valid(self, tmp_path):
         mgr = ModelManager(tmp_path / "ckpts")

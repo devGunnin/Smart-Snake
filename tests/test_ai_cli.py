@@ -33,6 +33,34 @@ class TestCLIParser:
         assert args.num_envs == 4
         assert args.device == "cpu"
 
+    def test_train_ppo_flags(self):
+        parser = _build_parser()
+        args = parser.parse_args([
+            "train",
+            "--clip-ratio", "0.3",
+            "--gae-lambda", "0.9",
+            "--entropy-coeff", "0.02",
+            "--ppo-epochs", "3",
+            "--num-minibatches", "8",
+            "--rollout-steps", "64",
+        ])
+        assert args.clip_ratio == 0.3
+        assert args.gae_lambda == 0.9
+        assert args.entropy_coeff == 0.02
+        assert args.ppo_epochs == 3
+        assert args.num_minibatches == 8
+        assert args.rollout_steps == 64
+
+    def test_train_self_play_flags(self):
+        parser = _build_parser()
+        args = parser.parse_args([
+            "train",
+            "--snapshot-interval", "100",
+            "--snapshot-pool-size", "20",
+        ])
+        assert args.snapshot_interval == 100
+        assert args.snapshot_pool_size == 20
+
     def test_train_reward_flags(self):
         parser = _build_parser()
         args = parser.parse_args([
@@ -53,10 +81,8 @@ class TestCLIParser:
         parser = _build_parser()
         args = parser.parse_args([
             "train",
-            "--target-update-freq", "200",
             "--max-steps-per-episode", "300",
         ])
-        assert args.target_update_freq == 200
         assert args.max_steps_per_episode == 300
 
     def test_benchmark_defaults(self):
@@ -90,6 +116,9 @@ class TestCLITrain:
             "--checkpoint-dir", ckpt_dir,
             "--log-dir", log_dir,
             "--device", "cpu",
+            "--rollout-steps", "8",
+            "--ppo-epochs", "1",
+            "--num-minibatches", "1",
         ])
         assert result == 0
 
@@ -109,6 +138,9 @@ class TestCLITrain:
             "--device", "cpu",
             "--reward-apple", "5.0",
             "--reward-death", "-5.0",
+            "--rollout-steps", "8",
+            "--ppo-epochs", "1",
+            "--num-minibatches", "1",
         ])
         assert result == 0
 
@@ -116,9 +148,9 @@ class TestCLITrain:
         with pytest.raises(SystemExit, match="2"):
             main(["train", "--num-envs", "0"])
 
-    def test_train_target_update_freq_must_be_positive(self):
+    def test_train_ppo_epochs_must_be_positive(self):
         with pytest.raises(SystemExit, match="2"):
-            main(["train", "--target-update-freq", "0"])
+            main(["train", "--ppo-epochs", "0"])
 
 
 class TestCLIBenchmark:
@@ -142,14 +174,14 @@ class TestCLIBenchmark:
 
 class TestCLIExport:
     def test_export(self, tmp_path):
-        from smart_snake.ai.agent import DQNAgent
+        from smart_snake.ai.agent import MAPPOAgent
         from smart_snake.ai.config import TrainingConfig
 
         cfg = TrainingConfig(
             grid_width=10, grid_height=10,
             conv_channels=(8,), fc_hidden=16,
         )
-        agent = DQNAgent(cfg, device="cpu")
+        agent = MAPPOAgent(cfg, device="cpu")
         src = tmp_path / "model.pt"
         agent.save(src)
 

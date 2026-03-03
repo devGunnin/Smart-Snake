@@ -32,7 +32,9 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", help="Available commands.")
 
     # --- train ---
-    train_p = sub.add_parser("train", help="Run DQN self-play training.")
+    train_p = sub.add_parser(
+        "train", help="Run MAPPO self-play training.",
+    )
     train_p.add_argument(
         "--config", type=str, default=None,
         help="Path to a JSON config file (overrides other flags).",
@@ -43,14 +45,7 @@ def _build_parser() -> argparse.ArgumentParser:
     train_p.add_argument("--players", type=int, default=None)
     train_p.add_argument("--num-envs", type=_positive_int, default=None)
     train_p.add_argument("--learning-rate", type=float, default=None)
-    train_p.add_argument("--batch-size", type=int, default=None)
     train_p.add_argument("--gamma", type=float, default=None)
-    train_p.add_argument("--epsilon-start", type=float, default=None)
-    train_p.add_argument("--epsilon-end", type=float, default=None)
-    train_p.add_argument(
-        "--epsilon-decay-steps", type=int, default=None,
-    )
-    train_p.add_argument("--buffer-size", type=int, default=None)
     train_p.add_argument("--save-interval", type=int, default=None)
     train_p.add_argument("--log-interval", type=int, default=None)
     train_p.add_argument("--checkpoint-dir", type=str, default=None)
@@ -60,15 +55,46 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Path to checkpoint to resume from.",
     )
     train_p.add_argument(
-        "--target-update-freq", type=_positive_int, default=None,
-    )
-    train_p.add_argument(
         "--max-steps-per-episode", type=int, default=None,
     )
     train_p.add_argument("--device", type=str, default=None)
     train_p.add_argument(
         "--state-encoding", type=str, default=None,
         choices=["absolute", "relative"],
+    )
+    # PPO hyperparameters.
+    train_p.add_argument(
+        "--clip-ratio", type=float, default=None,
+        help="PPO clip ratio (default 0.2).",
+    )
+    train_p.add_argument(
+        "--gae-lambda", type=float, default=None,
+        help="GAE lambda (default 0.95).",
+    )
+    train_p.add_argument(
+        "--entropy-coeff", type=float, default=None,
+        help="Entropy regularization coefficient (default 0.01).",
+    )
+    train_p.add_argument(
+        "--ppo-epochs", type=_positive_int, default=None,
+        help="Number of PPO update epochs per rollout (default 4).",
+    )
+    train_p.add_argument(
+        "--num-minibatches", type=_positive_int, default=None,
+        help="Number of mini-batches per PPO epoch (default 4).",
+    )
+    train_p.add_argument(
+        "--rollout-steps", type=_positive_int, default=None,
+        help="Steps per rollout before PPO update (default 128).",
+    )
+    # Self-play.
+    train_p.add_argument(
+        "--snapshot-interval", type=int, default=None,
+        help="Episodes between opponent snapshots (default 50).",
+    )
+    train_p.add_argument(
+        "--snapshot-pool-size", type=int, default=None,
+        help="Max opponent snapshots in pool (default 10).",
     )
     # Reward overrides.
     train_p.add_argument(
@@ -132,19 +158,21 @@ def _run_train(args: argparse.Namespace) -> int:
         "players": "player_count",
         "num_envs": "num_envs",
         "learning_rate": "learning_rate",
-        "batch_size": "batch_size",
         "gamma": "gamma",
-        "epsilon_start": "epsilon_start",
-        "epsilon_end": "epsilon_end",
-        "epsilon_decay_steps": "epsilon_decay_steps",
-        "buffer_size": "buffer_size",
         "save_interval": "save_interval",
         "log_interval": "log_interval",
         "checkpoint_dir": "checkpoint_dir",
         "log_dir": "log_dir",
         "state_encoding": "state_encoding",
-        "target_update_freq": "target_update_freq",
         "max_steps_per_episode": "max_steps_per_episode",
+        "clip_ratio": "clip_ratio",
+        "gae_lambda": "gae_lambda",
+        "entropy_coeff": "entropy_coeff",
+        "ppo_epochs": "ppo_epochs",
+        "num_minibatches": "num_minibatches",
+        "rollout_steps": "rollout_steps",
+        "snapshot_interval": "snapshot_interval",
+        "snapshot_pool_size": "snapshot_pool_size",
     }
     for cli_name, cfg_name in flag_map.items():
         val = getattr(args, cli_name, None)

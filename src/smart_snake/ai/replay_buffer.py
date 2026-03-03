@@ -1,138 +1,193 @@
-"""Experience replay buffers for DQN training."""
+"""On-policy rollout buffer for MAPPO training."""
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class Transition:
-    """A single experience tuple."""
+class RolloutBuffer:
+    """Fixed-length trajectory buffer for on-policy PPO updates.
 
-    state: np.ndarray
-    action: int
-    reward: float
-    next_state: np.ndarray
-    done: bool
-
-
-class ReplayBuffer:
-    """Fixed-size circular replay buffer with uniform sampling."""
-
-    def __init__(self, capacity: int) -> None:
-        if capacity < 1:
-            raise ValueError("capacity must be at least 1.")
-        self._capacity = capacity
-        self._buffer: list[Transition] = []
-        self._pos = 0
-
-    @property
-    def capacity(self) -> int:
-        return self._capacity
-
-    def __len__(self) -> int:
-        return len(self._buffer)
-
-    def add(self, transition: Transition) -> None:
-        """Add a transition, overwriting the oldest if full."""
-        if len(self._buffer) < self._capacity:
-            self._buffer.append(transition)
-        else:
-            self._buffer[self._pos] = transition
-        self._pos = (self._pos + 1) % self._capacity
-
-    def sample(
-        self, batch_size: int, rng: np.random.Generator | None = None,
-    ) -> list[Transition]:
-        """Sample a uniform random batch."""
-        if batch_size > len(self._buffer):
-            raise ValueError(
-                f"Cannot sample {batch_size} from buffer of size {len(self._buffer)}."
-            )
-        gen = rng or np.random.default_rng()
-        indices = gen.choice(len(self._buffer), size=batch_size, replace=False)
-        return [self._buffer[i] for i in indices]
-
-
-class PrioritizedReplayBuffer:
-    """Proportional prioritized experience replay.
-
-    Uses a sum-tree for O(log n) sampling and priority updates.
-    Importance-sampling weights are computed with an annealed beta.
+    Stores ``rollout_steps`` transitions per agent across ``num_agents``
+    agents.  After a full rollout, call :meth:`compute_returns` to
+    compute GAE advantages, then iterate mini-batches via
+    :meth:`generate_batches`.
     """
 
     def __init__(
         self,
-        capacity: int,
-        alpha: float = 0.6,
+        rollout_steps: int,
+        num_agents: int,
+        obs_shape: tuple[int, ...],
+        num_actions: int,
     ) -> None:
-        if capacity < 1:
-            raise ValueError("capacity must be at least 1.")
-        self._capacity = capacity
-        self._alpha = alpha
-        self._buffer: list[Transition | None] = [None] * capacity
-        self._priorities = np.zeros(capacity, dtype=np.float64)
-        self._pos = 0
-        self._size = 0
-        self._max_priority = 1.0
+        if rollout_steps < 1:
+            raise ValueError(
+                f"rollout_steps must be at least 1, got {rollout_steps}.",
+            )
+        if num_agents < 1:
+            raise ValueError(
+                f"num_agents must be at least 1, got {num_agents}.",
+            )
+        self.rollout_steps = rollout_steps
+        self.num_agents = num_agents
+        self.obs_shape = obs_shape
+        self.num_actions = num_actions
 
-    @property
-    def capacity(self) -> int:
-        return self._capacity
+        self.states = np.zeros(
+            (rollout_steps, num_agents, *obs_shape), dtype=np.float32,
+        )
+        self.actions = np.zeros(
+            (rollout_steps, num_agents), dtype=np.int64,
+        )
+        self.rewards = np.zeros(
+            (rollout_steps, num_agents), dtype=np.float32,
+        )
+        self.values = np.zeros(
+            (rollout_steps, num_agents), dtype=np.float32,
+        )
+        self.log_probs = np.zeros(
+            (rollout_steps, num_agents), dtype=np.float32,
+        )
+        self.dones = np.zeros(
+            (rollout_steps, num_agents), dtype=np.float32,
+        )
+        self.action_masks = np.ones(
+            (rollout_steps, num_agents, num_actions), dtype=bool,
+        )
+
+        self.advantages = np.zeros(
+            (rollout_steps, num_agents), dtype=np.float32,
+        )
+        self.returns = np.zeros(
+            (rollout_steps, num_agents), dtype=np.float32,
+        )
+
+        self._step = 0
 
     def __len__(self) -> int:
-        return self._size
+        return self._step
 
-    def add(self, transition: Transition) -> None:
-        """Add a transition with maximum priority."""
-        self._buffer[self._pos] = transition
-        self._priorities[self._pos] = self._max_priority ** self._alpha
-        self._pos = (self._pos + 1) % self._capacity
-        self._size = min(self._size + 1, self._capacity)
+    @property
+    def full(self) -> bool:
+        """Whether the buffer has collected ``rollout_steps`` transitions."""
+        return self._step >= self.rollout_steps
 
-    def sample(
+    def add(
         self,
-        batch_size: int,
-        beta: float = 0.4,
-        rng: np.random.Generator | None = None,
-    ) -> tuple[list[Transition], np.ndarray, np.ndarray]:
-        """Sample a prioritized batch.
+        states: np.ndarray,
+        actions: np.ndarray,
+        rewards: np.ndarray,
+        values: np.ndarray,
+        log_probs: np.ndarray,
+        dones: np.ndarray,
+        action_masks: np.ndarray,
+    ) -> None:
+        """Store one timestep of data for all agents.
 
-        Returns ``(transitions, weights, indices)`` where *weights* are
-        importance-sampling corrections and *indices* identify the
-        sampled entries for later priority updates.
+        Each array has shape ``(num_agents, ...)``.
         """
-        if batch_size > self._size:
+        if self._step >= self.rollout_steps:
+            raise RuntimeError("RolloutBuffer is full; call reset().")
+        self.states[self._step] = states
+        self.actions[self._step] = actions
+        self.rewards[self._step] = rewards
+        self.values[self._step] = values
+        self.log_probs[self._step] = log_probs
+        self.dones[self._step] = dones
+        self.action_masks[self._step] = action_masks
+        self._step += 1
+
+    def compute_returns(
+        self,
+        last_values: np.ndarray,
+        gamma: float,
+        gae_lambda: float,
+    ) -> None:
+        """Compute GAE advantages and discounted returns.
+
+        Parameters
+        ----------
+        last_values:
+            Value estimates for the state *after* the last stored step,
+            shape ``(num_agents,)``.
+        gamma:
+            Discount factor.
+        gae_lambda:
+            GAE lambda for bias-variance trade-off.
+        """
+        gae = np.zeros(self.num_agents, dtype=np.float32)
+        for t in reversed(range(self._step)):
+            next_values = (
+                last_values if t == self._step - 1
+                else self.values[t + 1]
+            )
+            next_non_terminal = 1.0 - self.dones[t]
+            delta = (
+                self.rewards[t]
+                + gamma * next_values * next_non_terminal
+                - self.values[t]
+            )
+            gae = delta + gamma * gae_lambda * next_non_terminal * gae
+            self.advantages[t] = gae
+        self.returns[:self._step] = (
+            self.advantages[:self._step] + self.values[:self._step]
+        )
+
+    def generate_batches(
+        self,
+        num_minibatches: int,
+        rng: np.random.Generator | None = None,
+    ) -> list[dict[str, np.ndarray]]:
+        """Yield shuffled mini-batches from the stored rollout.
+
+        Returns a list of dicts, each containing flat arrays for
+        ``states``, ``actions``, ``log_probs``, ``advantages``,
+        ``returns``, and ``action_masks``.
+        """
+        if num_minibatches < 1:
             raise ValueError(
-                f"Cannot sample {batch_size} from buffer of size {self._size}."
+                "num_minibatches must be at least 1, "
+                f"got {num_minibatches}.",
             )
         gen = rng or np.random.default_rng()
+        total = self._step * self.num_agents
+        if total < 1:
+            raise ValueError("Cannot generate batches from an empty buffer.")
+        if num_minibatches > total:
+            raise ValueError(
+                "num_minibatches must be <= number of collected samples: "
+                f"{num_minibatches} > {total}.",
+            )
+        indices = gen.permutation(total)
 
-        prios = self._priorities[:self._size]
-        total = prios.sum()
-        probs = prios / total
+        flat_states = self.states[:self._step].reshape(
+            total, *self.obs_shape,
+        )
+        flat_actions = self.actions[:self._step].reshape(total)
+        flat_log_probs = self.log_probs[:self._step].reshape(total)
+        flat_advantages = self.advantages[:self._step].reshape(total)
+        flat_returns = self.returns[:self._step].reshape(total)
+        flat_masks = self.action_masks[:self._step].reshape(
+            total, self.num_actions,
+        )
 
-        indices = gen.choice(self._size, size=batch_size, replace=False, p=probs)
+        batches: list[dict[str, np.ndarray]] = []
+        for idx in np.array_split(indices, num_minibatches):
+            batches.append({
+                "states": flat_states[idx],
+                "actions": flat_actions[idx],
+                "log_probs": flat_log_probs[idx],
+                "advantages": flat_advantages[idx],
+                "returns": flat_returns[idx],
+                "action_masks": flat_masks[idx],
+            })
+        return batches
 
-        # Importance-sampling weights.
-        min_prob = prios.min() / total
-        max_weight = (self._size * min_prob) ** (-beta)
-        weights = (self._size * probs[indices]) ** (-beta)
-        weights /= max_weight  # normalise to [0, 1]
-
-        transitions = [self._buffer[i] for i in indices]
-        return transitions, weights.astype(np.float32), indices
-
-    def update_priorities(
-        self, indices: np.ndarray, td_errors: np.ndarray,
-    ) -> None:
-        """Update priorities using absolute TD errors."""
-        clipped = np.abs(td_errors) + 1e-6
-        for idx, prio in zip(indices, clipped, strict=True):
-            self._priorities[idx] = prio ** self._alpha
-            self._max_priority = max(self._max_priority, float(prio))
+    def reset(self) -> None:
+        """Clear the buffer for the next rollout."""
+        self._step = 0

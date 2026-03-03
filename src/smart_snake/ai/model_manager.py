@@ -49,6 +49,7 @@ class ModelManager:
         self._meta_path = self._dir / self.METADATA_FILE
         self._versions: list[CheckpointMeta] = []
         self._best_win_rate: float = -1.0
+        self._best_mean_reward: float = float("-inf")
         self._load_existing_metadata()
 
     def _load_existing_metadata(self) -> None:
@@ -58,6 +59,18 @@ class ModelManager:
                 CheckpointMeta(**v) for v in raw.get("versions", [])
             ]
             self._best_win_rate = raw.get("best_win_rate", -1.0)
+            if "best_mean_reward" in raw:
+                self._best_mean_reward = raw["best_mean_reward"]
+            else:
+                # Legacy metadata compatibility.
+                self._best_mean_reward = max(
+                    (
+                        v.mean_reward
+                        for v in self._versions
+                        if v.win_rate == self._best_win_rate
+                    ),
+                    default=float("-inf"),
+                )
             logger.info(
                 "Loaded %d existing checkpoints from %s.",
                 len(self._versions), self._meta_path,
@@ -67,6 +80,7 @@ class ModelManager:
         data = {
             "versions": [v.to_dict() for v in self._versions],
             "best_win_rate": self._best_win_rate,
+            "best_mean_reward": self._best_mean_reward,
         }
         self._meta_path.write_text(json.dumps(data, indent=2))
 
@@ -77,6 +91,10 @@ class ModelManager:
     @property
     def best_win_rate(self) -> float:
         return self._best_win_rate
+
+    @property
+    def best_mean_reward(self) -> float:
+        return self._best_mean_reward
 
     @property
     def latest_version(self) -> int:
@@ -111,13 +129,20 @@ class ModelManager:
         )
         self._versions.append(meta)
 
-        if win_rate > self._best_win_rate:
+        if (
+            win_rate > self._best_win_rate
+            or (
+                win_rate == self._best_win_rate
+                and mean_reward > self._best_mean_reward
+            )
+        ):
             self._best_win_rate = win_rate
+            self._best_mean_reward = mean_reward
             best_path = self._dir / self.BEST_MODEL_FILE
             torch.save(state_dict, best_path)
             logger.info(
-                "New best model: v%d (win_rate=%.3f).",
-                version, win_rate,
+                "New best model: v%d (win_rate=%.3f, mean_reward=%.3f).",
+                version, win_rate, mean_reward,
             )
 
         self._save_metadata()
@@ -175,7 +200,7 @@ class ModelManager:
         """Export a checkpoint stripped to inference-only weights.
 
         Removes optimizer state and step count, keeping only the
-        online network weights and config.
+        actor network weights and config.
         """
         data = torch.load(
             Path(checkpoint_path),
@@ -183,7 +208,7 @@ class ModelManager:
             weights_only=False,
         )
         inference_data = {
-            "online_state_dict": data["online_state_dict"],
+            "actor_state_dict": data["actor_state_dict"],
             "config": data.get("config", {}),
         }
         out = Path(output_path)

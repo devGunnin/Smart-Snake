@@ -199,6 +199,58 @@ class TestMultiSnakeEnvStep:
             env.step([0, 4])
 
 
+class TestActionMasking:
+    def test_get_action_masks_before_reset_raises(self):
+        env = MultiSnakeEnv(player_count=2)
+        with pytest.raises(RuntimeError, match="reset"):
+            env.get_action_masks()
+
+    def test_get_action_masks_returns_correct_structure(self):
+        env = MultiSnakeEnv(player_count=2, seed=0)
+        env.reset()
+        masks = env.get_action_masks()
+        assert len(masks) == 2
+        for mask in masks:
+            assert mask.shape == (NUM_ACTIONS,)
+            assert mask.dtype == bool
+
+    def test_reverse_direction_masked(self):
+        env = MultiSnakeEnv(player_count=2, seed=0)
+        env.reset()
+        masks = env.get_action_masks()
+        # Each snake should have exactly one illegal action (reverse).
+        for mask in masks:
+            assert mask.sum() == NUM_ACTIONS - 1
+
+    def test_masked_action_is_reverse(self):
+        from smart_snake.ai.environment import (  # noqa: I001
+            ACTION_TO_DIRECTION,
+            _DIRECTION_OPPOSITES,
+        )
+
+        env = MultiSnakeEnv(player_count=2, seed=0)
+        env.reset()
+        masks = env.get_action_masks()
+        for sid in range(2):
+            snake = env._engine.snakes[sid]
+            opp_dir = _DIRECTION_OPPOSITES[snake.direction]
+            for action_idx, d in enumerate(ACTION_TO_DIRECTION):
+                if d == opp_dir:
+                    assert not masks[sid][action_idx]
+                else:
+                    assert masks[sid][action_idx]
+
+    def test_dead_snake_all_actions_valid(self):
+        env = MultiSnakeEnv(
+            player_count=2, seed=0, max_steps=200,
+        )
+        env.reset()
+        # Kill snake 0.
+        env._engine.snakes[0].alive = False
+        masks = env.get_action_masks()
+        assert masks[0].all()  # dead snake: all valid
+
+
 class TestAppleProximityReward:
     """Tests for the apple-proximity reward shaping."""
 

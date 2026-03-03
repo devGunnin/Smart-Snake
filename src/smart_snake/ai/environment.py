@@ -39,6 +39,16 @@ ACTION_TO_DIRECTION: list[Direction] = [
 ]
 NUM_ACTIONS = len(ACTION_TO_DIRECTION)
 
+# Opposite action indices: ACTION_OPPOSITE[a] is the reverse of action a.
+ACTION_OPPOSITE: dict[int, int] = {0: 1, 1: 0, 2: 3, 3: 2}
+
+_DIRECTION_OPPOSITES: dict[Direction, Direction] = {
+    Direction.UP: Direction.DOWN,
+    Direction.DOWN: Direction.UP,
+    Direction.LEFT: Direction.RIGHT,
+    Direction.RIGHT: Direction.LEFT,
+}
+
 
 def _validate_action(action: int, *, agent_id: int | None = None) -> int:
     """Validate and normalize an action index."""
@@ -274,6 +284,29 @@ class MultiSnakeEnv:
         ]
         info = {"tick": 0, "scores": [0] * self._player_count}
         return obs, info
+
+    def get_action_masks(self) -> list[np.ndarray]:
+        """Return per-agent boolean action masks.
+
+        ``True`` marks a valid action, ``False`` an illegal one.
+        The only illegal action is the 180-degree reversal of the
+        snake's current direction.
+        """
+        if self._engine is None:
+            raise RuntimeError("Call reset() before get_action_masks().")
+        masks: list[np.ndarray] = []
+        for sid in range(self._player_count):
+            mask = np.ones(NUM_ACTIONS, dtype=bool)
+            snake = self._engine.snakes[sid]
+            if snake.alive:
+                current_dir = snake.direction
+                for action_idx, direction in enumerate(
+                    ACTION_TO_DIRECTION,
+                ):
+                    if direction == _DIRECTION_OPPOSITES[current_dir]:
+                        mask[action_idx] = False
+            masks.append(mask)
+        return masks
 
     def step(
         self, actions: list[int],
